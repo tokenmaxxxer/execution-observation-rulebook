@@ -1,20 +1,30 @@
 ---
-description: Discover this project's QA profile (issue tracker, templates, labels, app launch, test conventions) and write qa/intake.md — or verify the environment with --check
+description: Discover this project's QA profile (issue tracker, templates, labels, app launch, test conventions) and write it into the QA workspace — or verify the environment with --check
 argument-hint: "[--check]"
 ---
 
 Create or verify this project's QA profile: $ARGUMENTS
 
+**Workspace resolution** (all QA artifacts live here, never in the target
+repo): root = `$QA_WORKSPACE`, or `~/qa-workspace` if unset. If the root does
+not exist, create it and `git init`, and say so in one line. If it has a
+remote, `git pull --rebase` before writing. This project's directory is
+`<root>/projects/<slug>/` where `<slug>` is the target's repo name from its
+origin remote (directory name if no remote). The profile path below is
+`<root>/projects/<slug>/intake.md`.
+
 ## If the argument is `--check` (doctor mode)
 
 Verify the environment and report a short table — do not modify anything:
 
-1. `qa/intake.md` exists and parses (frontmatter readable).
-2. `gh auth status` succeeds.
-3. The issue repo from the profile is reachable: `gh repo view <issues.repo>`.
-4. The app start command from the profile exists (script/target present — do not launch).
-5. Every env var named in the profile's `env:` list is set in this shell. Report set/unset by NAME only — never print values.
-6. If the profile's `app.url` is set (web UI): a browser automation route exists — browser MCP tools available in this session, or the profile's `tests.framework` browser runner (e.g. playwright) installed. Report which one; `/testrun`'s UI cases depend on it.
+1. The workspace root resolves (`QA_WORKSPACE` set, or `~/qa-workspace`
+   exists) and is a git repository; note whether it has a remote to share.
+2. The profile exists and parses (frontmatter readable).
+3. `gh auth status` succeeds.
+4. The issue repo from the profile is reachable: `gh repo view <issues.repo>`.
+5. The app start command from the profile exists (script/target present — do not launch).
+6. Every env var named in the profile's `env:` list is set in this shell. Report set/unset by NAME only — never print values.
+7. If the profile's `app.url` is set (web UI): a browser automation route exists — browser MCP tools available in this session, or the profile's `tests.framework` browser runner (e.g. playwright) installed. Report which one; `/testrun`'s UI cases depend on it.
 
 Report pass/fail per line with the one command that fixes each failure (e.g. `gh auth login`, `gh auth setup-git`, `/qa-init`). Then stop.
 
@@ -30,7 +40,7 @@ Discover the profile by reading the project — ask the user only for what canno
 6. **Environments and secrets.** Record env var NAMES the QA work needs (staging URL, test account, …) — never values, never guesses. Unknown = leave listed but unset, and say so.
 7. **Language.** Issue and report language: infer from existing issues/README (e.g. `ko`, `en`); ask if unclear.
 
-Write the result to `qa/intake.md`. If the file already exists, update only fields that discovery contradicts and preserve everything a human added. Format:
+Write the result to `<root>/projects/<slug>/intake.md`. If the file already exists, update only fields that discovery contradicts and preserve everything a human added. Format:
 
 ```markdown
 ---
@@ -60,4 +70,4 @@ Main user flows, environments, fragile areas, anything worth knowing before
 testing. Free-form, human-edited — discovery never overwrites this section.
 ```
 
-Finish with: the profile summary in a few lines, which fields were assumed vs confirmed, and a reminder to commit `qa/intake.md` so every session shares it.
+Finish with: the profile summary in a few lines, which fields were assumed vs confirmed, then commit the profile in the workspace repo (push if it has a remote) so every session shares it.

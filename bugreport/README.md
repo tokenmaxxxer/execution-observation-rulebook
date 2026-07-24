@@ -8,8 +8,9 @@ language — and nothing gets filed that wasn't reproduced.
 
 1. Refuses to file anything not actually reproduced (a run-record failure
    with evidence counts; a hunch does not).
-2. Reads the filing rules from `qa/intake.md`: which repo, which template,
-   which labels, which language.
+2. Reads the filing rules from the project's workspace profile
+   (`projects/<slug>/intake.md`): which repo, which template, which labels,
+   which language.
 3. Searches open issues first; a duplicate gets the new evidence as a
    comment, not a twin issue.
 4. Follows the project's issue template verbatim when one exists; otherwise

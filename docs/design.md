@@ -109,6 +109,18 @@ shares one state, and CI reads/writes the same records. Run records link failure
 the issues they became (`UNFILED(<reason>)` otherwise), which is the thread a
 sign-off plugin will later pull.
 
+**Revised 2026-07-24 — the central workspace.** The per-repo `qa/` directory
+is replaced by one central private repo (`$QA_WORKSPACE`, default
+`~/qa-workspace`), one `projects/<slug>/` directory per target. Rationale:
+the agent is generic and QAs many projects — central storage keeps target
+repos untouched (projects without write access become testable, "report,
+don't fix" needs no carve-out) and makes cross-project stats trivial. What
+stays project-side: bug reports (the tracker is the dev handoff) — and
+regression tests move workspace-side, run by `/testrun` against a fresh
+checkout instead of by the target's CI. Trade-off accepted: regression
+detection at QA-run cadence, not per-commit; upstream PR remains an option
+per project.
+
 ## Roadmap notes
 
 - **testplan**: spec/PR → cases via boundary values, equivalence classes,

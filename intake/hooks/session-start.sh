@@ -10,10 +10,15 @@ case "${QA_INTAKE_OFF:-}" in
   *) exit 0 ;;
 esac
 
-if [ -f qa/intake.md ]; then
-  repo=$(sed -n 's/^[[:space:]]*repo:[[:space:]]*//p' qa/intake.md | head -1)
-  echo "qa-intake: profile qa/intake.md found${repo:+ (issues -> $repo)}."
+ws="${QA_WORKSPACE:-$HOME/qa-workspace}"
+slug=$(git remote get-url origin 2>/dev/null | sed -e 's#/*$##' -e 's#.*/##' -e 's#\.git$##')
+[ -n "$slug" ] || slug=$(basename "$PWD")
+profile="$ws/projects/$slug/intake.md"
+
+if [ -f "$profile" ]; then
+  repo=$(sed -n 's/^[[:space:]]*repo:[[:space:]]*//p' "$profile" | head -1)
+  echo "qa-intake: profile $profile found${repo:+ (issues -> $repo)}."
 else
-  echo "qa-intake: no qa/intake.md in this project. QA plugins fall back to ad-hoc discovery; run /qa-init once (and commit the file) to fix the issue tracker, templates, labels, and app launch method for the whole team."
+  echo "qa-intake: no profile at $profile. QA plugins fall back to ad-hoc discovery; run /qa-init once to fix the issue tracker, templates, labels, and app launch method for every session."
 fi
 exit 0

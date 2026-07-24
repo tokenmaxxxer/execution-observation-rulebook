@@ -1,8 +1,9 @@
 # stats
 
-Trust accounting for the QA stack. `/qa-stats` walks `qa/runs/`, follows every
-`Filed:` entry to its tracker outcome via `gh`, and reports the one number
-that decides whether an AI QA agent is useful: **do humans act on what it
+Trust accounting for the QA stack. `/qa-stats` walks the workspace's
+`projects/<slug>/runs/` (all projects with `--all`), follows every `Filed:`
+entry to its tracker outcome via `gh`, and reports the one number that
+decides whether an AI QA agent is useful: **do humans act on what it
 files?**
 
 ## Why this exists

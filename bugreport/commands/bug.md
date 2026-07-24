@@ -14,9 +14,11 @@ nothing gets filed.
 
 ## 1. Load the filing rules
 
-From `qa/intake.md`: `issues.repo`, `issues.template`, `issues.labels` /
-`severity_labels`, `language`. Without a profile: use the origin repo, check
-`.github/ISSUE_TEMPLATE/` directly, and note the fallback in the report.
+From the profile — `$QA_WORKSPACE/projects/<slug>/intake.md` (workspace
+default `~/qa-workspace`, `<slug>` = the target's repo name): `issues.repo`,
+`issues.template`, `issues.labels` / `severity_labels`, `language`. Without a
+profile: use the origin repo, check `.github/ISSUE_TEMPLATE/` directly, and
+note the fallback in the report.
 
 ## 2. Search for duplicates
 
@@ -47,8 +49,9 @@ Include the exact error text/output.
 commit/version tested, environment (local/staging), browser or client, OS.
 
 ## Evidence
-Command + output inline; screenshots/log paths from qa/evidence/ (attach or
-quote the relevant excerpt — a path alone is not readable from the tracker).
+Command + output inline; screenshots/log paths from the workspace's
+evidence/ (attach or quote the relevant excerpt — a path alone is not
+readable from the tracker).
 
 ## Severity
 Per the project's scheme; fallback: sev:critical (data loss / no workaround),
@@ -62,4 +65,6 @@ and searchable — no "bug:" prefix if the label already says it.
 
 `gh issue create --repo <repo> --title ... --body-file ... --label ...`
 (labels only from the project's actual label set). Then append the issue URL
-to the run record entry that produced it, and report the URL in one line.
+to the run record entry (in the workspace's `projects/<slug>/runs/`) that
+produced it, commit that in the workspace repo (`git pull --rebase` first,
+push after, when it has a remote), and report the URL in one line.

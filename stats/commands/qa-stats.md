@@ -1,6 +1,6 @@
 ---
-description: Trust accounting — follow every issue filed from qa/runs/ to its tracker outcome; report acceptance rate, noise rate, and backlog
-argument-hint: "[--since YYYY-MM-DD]"
+description: Trust accounting — follow every issue filed from the workspace's run records to its tracker outcome; report acceptance rate, noise rate, and backlog
+argument-hint: "[--since YYYY-MM-DD] [--all]"
 ---
 
 Report the QA stack's production signal. Scope: $ARGUMENTS
@@ -8,12 +8,15 @@ Report the QA stack's production signal. Scope: $ARGUMENTS
 ## 0. Read-only
 
 This command never modifies run records, evidence, or issues. It only reads
-`qa/runs/` and queries the tracker.
+run records from the QA workspace (`$QA_WORKSPACE`, default `~/qa-workspace`)
+and queries the tracker.
 
 ## 1. Collect
 
-Read every `qa/runs/*.md` (if `--since` is given, keep only records whose
-filename date is on or after it). From each record collect:
+Read every `<workspace>/projects/<slug>/runs/*.md` for the current project
+(`<slug>` = repo name from the origin remote; with `--all`, every project in
+`projects/` — report per project plus a total). If `--since` is given, keep
+only records whose filename date is on or after it. From each record collect:
 
 - case-table totals: pass / fail / blocked rows, for context
 - from each **Failures** block, the `Filed:` entry, in three classes:

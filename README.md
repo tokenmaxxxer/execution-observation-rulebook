@@ -20,23 +20,22 @@ Two rules run through everything:
   actually exercised, and every verdict cites evidence — a command and its
   output, a screenshot, a log excerpt. Reading the code produces notes,
   never verdicts.
-- **Report, don't fix.** A QA session never edits product code; findings
-  become issues or run-record entries. The fix belongs to a dev session.
+- **Report, don't fix.** A QA session never edits the target project;
+  findings become issues or run-record entries. The fix belongs to a dev
+  session.
 
 ## Plugins
 
 | Plugin | QA function | How |
 |---|---|---|
-| [intake](intake/) | Per-project profile: issue repo, issue templates, labels, app launch, test conventions, report language — discovered once by `/qa-init`, frozen into a committed `qa/intake.md` that every other plugin reads. `--check` doctors the environment. | command + `SessionStart` |
-| [testrun](testrun/) | Execution: `/testrun` launches the app per the profile, runs the plan (`qa/plan.md`) or an ad-hoc smoke of the main flows, and writes a run record where every case's verdict points at its evidence. | command + thin directive |
+| [intake](intake/) | Per-project profile: issue repo, issue templates, labels, app launch, test conventions, report language — discovered once by `/qa-init`, frozen into the workspace's `projects/<slug>/intake.md` that every other plugin reads. `--check` doctors the environment. | command + `SessionStart` |
+| [testrun](testrun/) | Execution: `/testrun` launches the app per the profile, runs the regression suite + plan (or an ad-hoc smoke of the main flows), and writes a run record where every case's verdict points at its evidence. | command + thin directive |
 | [bugreport](bugreport/) | Reporting: `/bug` files a reproduced defect to the project's tracker — its template, its labels, its language — after a duplicate search; standard form only as fallback. | command + thin directive |
-| [stats](stats/) | Trust accounting: `/qa-stats` follows every issue filed from `qa/runs/` to its tracker outcome and reports acceptance rate, noise rate, duplicate conversions, and UNFILED reasons. Read-only. | command |
+| [stats](stats/) | Trust accounting: `/qa-stats` follows every issue filed from the workspace's run records to its tracker outcome and reports acceptance rate, noise rate, duplicate conversions, and UNFILED reasons. Read-only. | command |
+| [regress](regress/) | Regression: `/regress` turns a confirmed bug into a test adopted only through the gate — fails on the bug commit, passes stably (k=5) on the fix; anything less is discarded. Adopted tests run on every `/testrun`. | command |
 | [qa-agent-env](qa-agent-env/) | One-install bundle for the whole stack. | dependencies |
 
-Roadmap (in order): **regress** (confirmed bug → automated regression test in
-the project's own framework, committed only if it fails on the buggy commit
-and passes stably on the fix; flaky detection; `git bisect` on regressions),
-**testplan** (spec →
+Roadmap (in order): **testplan** (spec →
 boundary/negative/state-transition cases + traceability), **signoff**
 (plan-vs-run summary — decision material, not a verdict; `/qa-stats` already
 carries its outcome-tracking half).
@@ -50,24 +49,34 @@ dispatch plugin turns an issue into a PR that `Closes` it. QA sessions never
 fix, dev sessions never file — the interface between the two stacks is the
 project's issue tracker, and both ends of the exchange are recorded in git.
 
-## The `qa/` directory contract
+## The QA workspace contract
 
-Everything the stack produces lives in the target project, committed, so a
-session that dies resumes from disk and every user shares one state:
+Everything the stack produces lives in **one central private repo** — the QA
+workspace — one directory per target project. Target repos get nothing
+committed (so projects the agent has no write access to are still testable),
+and a session that dies resumes from disk:
 
 ```
-qa/
-  intake.md        # the profile (env var NAMES only — never secrets)
-  plan.md          # optional test plan (roadmap: /testplan writes it)
-  runs/            # one record per run: case table, failures, issue URLs
-  evidence/        # screenshots, outputs, logs cited by run records
+$QA_WORKSPACE/            # default ~/qa-workspace (auto-created + git init)
+  projects/<slug>/        # <slug> = target repo name from its origin remote
+    intake.md             # the profile (env var NAMES only — never secrets)
+    plan.md               # optional test plan (roadmap: /testplan writes it)
+    runs/                 # one record per run: case table, failures, issue URLs
+    evidence/             # screenshots, outputs, logs cited by run records
+    regress/              # adopted regression tests, run by /testrun every run
 ```
+
+The two things that stay project-side by design: **bug reports** go to each
+project's own tracker (the tracker is the QA→dev handoff, so it must be where
+the devs look), and an adopted regression test *may* additionally be PR'd
+upstream when a project wants it in its own CI.
 
 ## Install
 
 The stack installs where the QA agent runs — not in every product repo. What
-lives per project is knowledge, not software: one committed `qa/intake.md`
-profile, read by whichever QA session visits.
+accumulates is knowledge, not software, and it accumulates in the QA
+workspace repo (set `QA_WORKSPACE`, or let `~/qa-workspace` be created on
+first use), read by whichever QA session visits a project.
 
 **QA agent environment (primary path)** — a one-time user-scope install in
 the environment that does the QA work:
@@ -110,8 +119,8 @@ a command you don't invoke is off.
 ## Repo layout
 
 - `.claude-plugin/marketplace.json` — the marketplace manifest.
-- `intake/`, `testrun/`, `bugreport/`, `stats/`, `qa-agent-env/` — one
-  directory per plugin, each with its own README.
+- `intake/`, `testrun/`, `bugreport/`, `stats/`, `regress/`, `qa-agent-env/`
+  — one directory per plugin, each with its own README.
 - `bench/` — the seeded-bug evaluation harness: target apps, hidden answer
   keys, and the on/off protocol that measures the stack.
 - `docs/design.md` — the design record: function-first lineup, the 3-layer

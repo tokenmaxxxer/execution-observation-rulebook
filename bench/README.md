@@ -26,13 +26,16 @@ nothing else) to a fresh temp directory. `answers/` stays behind.
 
 Two arms per target, N repetitions each (start with N=3):
 
-- **on** — stack installed; run headless: `claude -p "/testrun"` in the copy.
+- **on** — stack installed; run headless: `claude -p "/testrun"` in the copy,
+  with `QA_WORKSPACE` pointed at a fresh temp workspace for that run.
 - **off** — no stack; run headless with the bare prompt: `"QA this app: run
   it, try the main flows and obvious failure paths, write findings to
   qa/runs/ with evidence."`
 
 Per run, before scoring: `git -C <copy> status` style check — collect the
-run record, `qa/evidence/`, and **any modification to product files**.
+run record and evidence (on arm: from the temp workspace; off arm: from the
+copy's `qa/`), and **any modification to the copy** (on arm: any write at all
+violates the workspace contract; off arm: writes outside `qa/`).
 
 Bench copies have no tracker configured, so the `/bug` path lands on
 `UNFILED(no tracker)` — scoring reads run records, not real issues.

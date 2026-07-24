@@ -22,12 +22,17 @@
     {
       "name": "stats",
       "source": "./stats",
-      "description": "Trust accounting: /qa-stats follows every issue filed from qa/runs/ to its tracker outcome and reports the stack's production signal — acceptance rate (fixed), noise rate (closed not-planned), duplicate conversions, UNFILED reasons. Read-only, no hooks."
+      "description": "Trust accounting: /qa-stats follows every issue filed from the workspace's run records to its tracker outcome and reports the stack's production signal — acceptance rate (fixed), noise rate (closed not-planned), duplicate conversions, UNFILED reasons. Read-only, no hooks."
+    },
+    {
+      "name": "regress",
+      "source": "./regress",
+      "description": "Regression tests with an adoption gate: /regress turns a confirmed bug into an automated test adopted only if it fails on the bug commit and passes stably (k=5) on the fix. Adopted tests live in the QA workspace and run on every /testrun; anything that can't prove itself is discarded, not committed."
     },
     {
       "name": "qa-agent-env",
       "source": "./qa-agent-env",
-      "description": "One-install QA environment bundle: pulls in the whole tokenmaxxxer QA stack (intake, testrun, bugreport, stats) as dependencies. Contains no code of its own."
+      "description": "One-install QA environment bundle: pulls in the whole tokenmaxxxer QA stack (intake, testrun, bugreport, stats, regress) as dependencies. Contains no code of its own."
     }
   ]
 }
