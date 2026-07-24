@@ -35,9 +35,8 @@ Two rules run through everything:
 
 Roadmap (in order): **regress** (confirmed bug → automated regression test in
 the project's own framework, committed only if it fails on the buggy commit
-and passes stably on the fix — spec:
-[docs/proposals/2026-07-24-regress-adoption-gate.md](docs/proposals/2026-07-24-regress-adoption-gate.md);
-flaky detection; `git bisect` on regressions), **testplan** (spec →
+and passes stably on the fix; flaky detection; `git bisect` on regressions),
+**testplan** (spec →
 boundary/negative/state-transition cases + traceability), **signoff**
 (plan-vs-run summary — decision material, not a verdict; `/qa-stats` already
 carries its outcome-tracking half).
@@ -66,11 +65,27 @@ qa/
 
 ## Install
 
-**Repo-scoped (primary path)** — commit this to the target project's
-`.claude/settings.json`; every user who opens the repo gets the stack
-automatically (the boundary is repo access plus folder trust), and one
-committed `/qa-init` profile makes every session file to the same tracker the
-same way:
+The stack installs where the QA agent runs — not in every product repo. What
+lives per project is knowledge, not software: one committed `qa/intake.md`
+profile, read by whichever QA session visits.
+
+**QA agent environment (primary path)** — a one-time user-scope install in
+the environment that does the QA work:
+
+```
+/plugin marketplace add tokenmaxxxer/qa-agent-rulebook
+/plugin install qa-agent-env@tokenmaxxxer-qa
+```
+
+Dev sessions on the product repos stay untouched — QA directives reach only
+the environment that installed the stack. For a private marketplace repo, run
+`gh auth setup-git` once so background marketplace updates can authenticate.
+Headless runs (`claude -p "/testrun"`, without `--bare`) use the same install
+— a scheduled smoke run files issues with the same discipline.
+
+**Repo-scoped (optional)** — to pin the stack to a specific repo instead, so
+every user who opens it gets it automatically (the boundary is repo access
+plus folder trust), commit this to that repo's `.claude/settings.json`:
 
 ```json
 {
@@ -83,18 +98,6 @@ same way:
     "qa-agent-env@tokenmaxxxer-qa": true
   }
 }
-```
-
-For a private marketplace repo, have each member run `gh auth setup-git` once
-so background marketplace updates can authenticate. Headless/CI sessions
-(`claude -p`, without `--bare`) load the same repo-scope plugins — a scheduled
-smoke run files issues with the same discipline.
-
-**Individual (user scope)** — from any Claude Code session:
-
-```
-/plugin marketplace add tokenmaxxxer/qa-agent-rulebook
-/plugin install qa-agent-env@tokenmaxxxer-qa
 ```
 
 ## Kill switches
@@ -112,8 +115,7 @@ a command you don't invoke is off.
 - `bench/` — the seeded-bug evaluation harness: target apps, hidden answer
   keys, and the on/off protocol that measures the stack.
 - `docs/design.md` — the design record: function-first lineup, the 3-layer
-  deployment model, roadmap. `docs/proposals/` — specs frozen ahead of
-  implementation.
+  deployment model, roadmap.
 
 All plugins are unbenchmarked as of v0.1.0 — labeled as such, per house rule.
 `bench/` is the harness meant to change that.

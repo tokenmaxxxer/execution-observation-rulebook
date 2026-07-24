@@ -62,37 +62,44 @@ asked, never guessed; secrets appear as env var *names* only.
 `/qa-init --check` is the doctor: profile present, `gh` authed, issue repo
 reachable, launch command present, named env vars set.
 
-## Shared deployment: the 3-layer model
+## Deployment: the 3-layer model
 
-Confirmed mechanism: a project's checked-in `.claude/settings.json` may
-declare `extraKnownMarketplaces` + `enabledPlugins`; configured plugins
-auto-install at session startup. Private GitHub marketplaces work over normal
-git credentials (background auto-update needs `gh auth setup-git` or SSH).
-Repo-scope plugins also load in `claude -p` headless sessions (not `--bare`).
-Marketplace `version` fields pin plugin versions; stable/latest channels are
-possible via two branches.
+The stack installs where the QA agent runs; product repos carry knowledge,
+not software. (Revised same-day: an earlier draft made repo-scoped settings
+the primary path — flipped so QA directives never reach non-QA sessions on
+the product repos.)
 
 1. **Marketplace layer — this repo.** Stack-wide standards live in the
    plugins themselves (standard bug form fallback, severity fallback
    scheme, evidence rules). Standards change by PR here and propagate by
    plugin update.
-2. **Project layer — two committed files per target repo.**
-   `.claude/settings.json` (stack auto-installs for every user who opens the
-   repo, CI included — the boundary is repo access plus folder trust) and
-   `qa/intake.md` (one shared profile: same tracker, same template, same
-   labels, same launch method for everyone).
-3. **Personal layer — secrets and kill switches.** Values for the env vars
-   the profile names; `QA_*_OFF` switches.
+2. **QA-agent layer — a user-scope install.** `/plugin marketplace add` +
+   `/plugin install qa-agent-env@tokenmaxxxer-qa`, once, in the environment
+   (interactive or headless) that performs QA. Secrets (values for the env
+   vars the profile names) and `QA_*_OFF` kill switches live here too.
+3. **Project layer — one committed file per target repo.** `qa/intake.md`:
+   the profile any visiting QA session reads (tracker, template, labels,
+   launch method). The only per-project footprint.
+
+Optional repo-scoped variant, when QA should be runnable by anyone in a
+given repo rather than a dedicated agent: the repo's checked-in
+`.claude/settings.json` may declare `extraKnownMarketplaces` +
+`enabledPlugins`; configured plugins auto-install at session startup for
+every user who opens the repo (boundary: repo access plus folder trust).
+Private GitHub marketplaces work over normal git credentials (background
+auto-update needs `gh auth setup-git` or SSH). Repo-scope plugins also load
+in `claude -p` headless sessions (not `--bare`). Marketplace `version`
+fields pin plugin versions; stable/latest channels are possible via two
+branches.
 
 Precedence: plugin built-in stack standard < intake profile < the user's
 session instruction.
 
 Known open items:
-- Whether a trust prompt appears on first auto-install from repo settings is
-  undocumented — test once, note in onboarding.
-- `install.sh` (user-scope path) deliberately skipped in v0.1: the primary
-  path is repo-scope settings; individuals can use `/plugin` by hand. Add
-  when a standalone-QA-session workflow actually materializes.
+- Whether a trust prompt appears on first auto-install from repo settings
+  (the optional variant) is undocumented — test once, note in onboarding.
+- `install.sh` still deliberately skipped: the primary path is two `/plugin`
+  commands. Add when provisioning QA-agent environments needs automation.
 
 ## The `qa/` contract
 
