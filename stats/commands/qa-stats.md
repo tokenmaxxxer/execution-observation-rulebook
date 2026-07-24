@@ -14,7 +14,7 @@ and queries the tracker.
 ## 1. Collect
 
 Read every `<workspace>/projects/<slug>/runs/*.md` for the current project
-(`<slug>` = repo name from the origin remote; with `--all`, every project in
+(`<slug>` = `<owner>-<repo>` from the origin remote; with `--all`, every project in
 `projects/` — report per project plus a total). If `--since` is given, keep
 only records whose filename date is on or after it. From each record collect:
 

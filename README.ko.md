@@ -55,7 +55,7 @@ dispatch 플러그인은 이슈를 `Closes` PR로 만듭니다. QA 세션은 고
 
 ```
 $QA_WORKSPACE/            # 기본값 ~/qa-workspace (첫 사용 시 자동 생성 + git init)
-  projects/<slug>/        # <slug> = 대상의 origin remote 기준 레포 이름
+  projects/<slug>/        # <slug> = 대상의 origin remote 기준 <owner>-<repo>
     intake.md             # 프로파일 (env var는 이름만 — 시크릿 절대 금지)
     plan.md               # 선택적 테스트 플랜 (로드맵: /testplan이 작성)
     runs/                 # 실행당 기록 하나: 케이스 표, 실패, 이슈 URL

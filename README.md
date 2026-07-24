@@ -58,7 +58,7 @@ and a session that dies resumes from disk:
 
 ```
 $QA_WORKSPACE/            # default ~/qa-workspace (auto-created + git init)
-  projects/<slug>/        # <slug> = target repo name from its origin remote
+  projects/<slug>/        # <slug> = <owner>-<repo> from the target's origin remote
     intake.md             # the profile (env var NAMES only — never secrets)
     plan.md               # optional test plan (roadmap: /testplan writes it)
     runs/                 # one record per run: case table, failures, issue URLs

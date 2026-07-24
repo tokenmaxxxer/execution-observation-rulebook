@@ -11,7 +11,8 @@ case "${QA_INTAKE_OFF:-}" in
 esac
 
 ws="${QA_WORKSPACE:-$HOME/qa-workspace}"
-slug=$(git remote get-url origin 2>/dev/null | sed -e 's#/*$##' -e 's#.*/##' -e 's#\.git$##')
+# <owner>-<repo> so acme/api and beta/api don't collide in projects/
+slug=$(git remote get-url origin 2>/dev/null | sed -e 's#\.git/*$##' -e 's#/*$##' -e 's#.*[:/]\([^/]*\)/\([^/]*\)$#\1-\2#')
 [ -n "$slug" ] || slug=$(basename "$PWD")
 profile="$ws/projects/$slug/intake.md"
 

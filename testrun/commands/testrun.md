@@ -10,8 +10,8 @@ Execute a QA run. Scope: $ARGUMENTS
 Resolve the QA workspace: root = `$QA_WORKSPACE`, or `~/qa-workspace` if
 unset (create + `git init` if missing, say so in one line; `git pull
 --rebase` first when it has a remote). This project's
-directory is `<root>/projects/<slug>/`, `<slug>` = repo name from the origin
-remote (directory name if no remote). Read `<project-dir>/intake.md`. If it
+directory is `<root>/projects/<slug>/`, `<slug>` = `<owner>-<repo>` from the
+origin remote (directory name if no remote). Read `<project-dir>/intake.md`. If it
 is missing, do a one-pass ad-hoc discovery (launch command, base URL) and say
 in one line that you are running without a profile.
 

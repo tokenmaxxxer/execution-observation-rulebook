@@ -9,9 +9,9 @@ Create or verify this project's QA profile: $ARGUMENTS
 repo): root = `$QA_WORKSPACE`, or `~/qa-workspace` if unset. If the root does
 not exist, create it and `git init`, and say so in one line. If it has a
 remote, `git pull --rebase` before writing. This project's directory is
-`<root>/projects/<slug>/` where `<slug>` is the target's repo name from its
-origin remote (directory name if no remote). The profile path below is
-`<root>/projects/<slug>/intake.md`.
+`<root>/projects/<slug>/` where `<slug>` is `<owner>-<repo>` from the
+target's origin remote (e.g. `acme-api`; directory name if no remote). The
+profile path below is `<root>/projects/<slug>/intake.md`.
 
 ## If the argument is `--check` (doctor mode)
 

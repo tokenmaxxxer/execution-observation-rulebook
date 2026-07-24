@@ -15,7 +15,8 @@ nothing gets filed.
 ## 1. Load the filing rules
 
 From the profile — `$QA_WORKSPACE/projects/<slug>/intake.md` (workspace
-default `~/qa-workspace`, `<slug>` = the target's repo name): `issues.repo`,
+default `~/qa-workspace`, `<slug>` = `<owner>-<repo>` from the target's
+origin remote): `issues.repo`,
 `issues.template`, `issues.labels` / `severity_labels`, `language`. Without a
 profile: use the origin repo, check `.github/ISSUE_TEMPLATE/` directly, and
 note the fallback in the report.

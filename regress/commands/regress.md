@@ -12,8 +12,8 @@ verifies nothing is debt with a green checkmark.
 ## 1. Resolve the bug
 
 Resolve the QA workspace (root = `$QA_WORKSPACE`, default `~/qa-workspace`;
-this project = `<root>/projects/<slug>/`, `<slug>` = repo name from the
-origin remote). The argument is an issue URL/number or a run-record failure
+this project = `<root>/projects/<slug>/`, `<slug>` = `<owner>-<repo>` from
+the origin remote). The argument is an issue URL/number or a run-record failure
 reference; either way, find the failure entry in `<project-dir>/runs/` (grep
 for the issue URL, or match the failure description). From it take:
 
