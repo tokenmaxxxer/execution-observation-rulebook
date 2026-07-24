@@ -1,0 +1,8 @@
+{
+  "name": "intake",
+  "version": "0.1.0",
+  "description": "Per-project QA profile: /qa-init discovers the project's issue tracker, issue templates, labels, app launch method, and test conventions, and writes them to qa/intake.md — the single file every other QA plugin reads. A SessionStart hook reports whether a profile exists.",
+  "author": {
+    "name": "tokenmaxxxer"
+  }
+}

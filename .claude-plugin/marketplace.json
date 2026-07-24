@@ -1,0 +1,28 @@
+{
+  "name": "tokenmaxxxer-qa",
+  "owner": {
+    "name": "tokenmaxxxer"
+  },
+  "plugins": [
+    {
+      "name": "intake",
+      "source": "./intake",
+      "description": "Per-project QA profile: /qa-init scans the target project once — issue tracker repo, issue templates, labels, app launch method, test conventions — and freezes it into qa/intake.md, which every other QA plugin reads. Committed to the project repo so the whole team shares one profile."
+    },
+    {
+      "name": "testrun",
+      "source": "./testrun",
+      "description": "Test execution: launches the actual product and exercises it — plan-driven when a plan exists, ad-hoc smoke otherwise. Every verdict carries evidence (command output, screenshot, log); run records land under qa/runs/. Report, don't fix: findings become issues, never edits to product code."
+    },
+    {
+      "name": "bugreport",
+      "source": "./bugreport",
+      "description": "Bug filing discipline: a confirmed, actually-reproduced defect becomes a tracker issue that follows the project's own issue template and labels (per qa/intake.md), with duplicate search before filing and a standard form as fallback."
+    },
+    {
+      "name": "qa-agent-env",
+      "source": "./qa-agent-env",
+      "description": "One-install QA environment bundle: pulls in the whole tokenmaxxxer QA stack (intake, testrun, bugreport) as dependencies. Contains no code of its own."
+    }
+  ]
+}
