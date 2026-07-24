@@ -4,8 +4,8 @@
 
 Claude Code 플러그인 마켓플레이스: 에이전트가
 **QA 엔지니어처럼 동작하게** 만드는 스택입니다 — 실제 제품을 띄우고, 직접
-돌려보고, 증거가 붙은 기록을 팀이 이미 일하는 곳(그 프로젝트의 이슈 트래커,
-그 프로젝트의 템플릿과 라벨)에 남깁니다.
+돌려보고, 증거가 붙은 기록을 프로젝트가 이미 기록을 쌓는 곳(그 프로젝트의
+이슈 트래커, 그 프로젝트의 템플릿과 라벨)에 남깁니다.
 
 철학이 아니라 기능에서 출발했습니다: 각 플러그인은 실제 QA 사이클의 한
 조각에 대응합니다 — v0.1은 **프로파일 → 실행 → 리포트**, 로드맵에 설계·회귀·
@@ -29,12 +29,25 @@ Claude Code 플러그인 마켓플레이스: 에이전트가
 | [intake](intake/) | 프로젝트별 프로파일: 이슈 repo, 이슈 템플릿, 라벨, 앱 기동법, 테스트 컨벤션, 리포트 언어 — `/qa-init`이 한 번 발견해서 커밋되는 `qa/intake.md`로 동결하고, 다른 모든 플러그인이 이 파일을 읽는다. `--check`는 환경 점검(닥터). | command + `SessionStart` |
 | [testrun](testrun/) | 실행: `/testrun`이 프로파일대로 앱을 띄우고, 플랜(`qa/plan.md`)이 있으면 플랜대로, 없으면 주요 플로우 애드혹 스모크를 돌린 뒤, 케이스마다 verdict가 증거를 가리키는 run record를 남긴다. | command + 얇은 directive |
 | [bugreport](bugreport/) | 리포트: `/bug`가 재현된 결함을 중복 검색 후 프로젝트의 트래커에 — 그 프로젝트의 템플릿, 라벨, 언어로 — 발행한다. 표준 양식은 템플릿 없는 프로젝트의 폴백. | command + 얇은 directive |
+| [stats](stats/) | 신뢰 회계: `/qa-stats`가 `qa/runs/`에서 발행된 모든 이슈를 트래커 결과까지 추적해 acceptance rate, noise rate, DUP 전환, UNFILED 사유를 보고한다. 읽기 전용. | command |
 | [qa-agent-env](qa-agent-env/) | 스택 전체 원-인스톨 번들. | dependencies |
 
-로드맵(순서대로): **testplan**(스펙 → 경계값/네거티브/상태전이 케이스 +
-추적성), **regress**(확정된 버그 → 프로젝트 자체 프레임워크의 자동화 회귀
-테스트, flaky 탐지, 회귀 시 `git bisect`), **signoff**(플랜 대비 실행 요약 —
-판단 재료이지 verdict가 아님).
+로드맵(순서대로): **regress**(확정된 버그 → 프로젝트 자체 프레임워크의
+자동화 회귀 테스트 — 버그 커밋에서 fail하고 수정 커밋에서 안정적으로 pass할
+때만 채택, 스펙:
+[docs/proposals/2026-07-24-regress-adoption-gate.md](docs/proposals/2026-07-24-regress-adoption-gate.md);
+flaky 탐지, 회귀 시 `git bisect`), **testplan**(스펙 → 경계값/네거티브/
+상태전이 케이스 + 추적성), **signoff**(플랜 대비 실행 요약 — 판단 재료이지
+verdict가 아님; 결과 추적 절반은 `/qa-stats`가 이미 담당).
+
+## QA→개발 루프
+
+"고치지 말고 리포트한다"에는 후반전이 있습니다: **트래커가 인수인계
+창구입니다.** 이 스택은 이슈를 발행하고, 자매
+[coding-agent-rulebook](https://github.com/tokenmaxxxer/coding-agent-rulebook)의
+dispatch 플러그인은 이슈를 `Closes` PR로 만듭니다. QA 세션은 고치지 않고,
+개발 세션은 발행하지 않습니다 — 두 스택 사이의 인터페이스는 프로젝트의 이슈
+트래커이고, 주고받은 양쪽 모두 git에 기록됩니다.
 
 ## `qa/` 디렉토리 계약
 
@@ -51,9 +64,9 @@ qa/
 
 ## 설치
 
-**회사 / 팀 (1차 경로)** — 대상 프로젝트의 `.claude/settings.json`에 아래를
-커밋합니다. 그 레포를 여는 모든 사용자에게 스택이 자동으로 깔리고(경계는 팀
-소속이 아니라 레포 접근 권한 + 폴더 trust), 한 번 커밋된 `/qa-init`
+**레포 스코프 (1차 경로)** — 대상 프로젝트의 `.claude/settings.json`에 아래를
+커밋합니다. 그 레포를 여는 모든 사용자에게 스택이 자동으로 깔리고(경계는
+레포 접근 권한 + 폴더 trust), 한 번 커밋된 `/qa-init`
 프로파일이 모든 세션을 같은 트래커에 같은 방식으로 발행하게 만듭니다:
 
 ```json
@@ -85,14 +98,18 @@ qa/
 
 `QA_INTAKE_OFF=1`, `QA_TESTRUN_OFF=1`, `QA_BUGREPORT_OFF=1` — 각각 해당
 플러그인의 훅을 세션에서 끕니다. `0/false/no/off`가 아닌 비어있지 않은 값만
-off로 칩니다.
+off로 칩니다. stats는 훅이 없어 스위치도 없습니다 — 호출하지 않는 커맨드는
+그 자체로 꺼져 있습니다.
 
 ## 레포 구성
 
 - `.claude-plugin/marketplace.json` — 마켓플레이스 매니페스트.
-- `intake/`, `testrun/`, `bugreport/`, `qa-agent-env/` — 플러그인당 디렉토리
-  하나, 각자 README 보유.
+- `intake/`, `testrun/`, `bugreport/`, `stats/`, `qa-agent-env/` —
+  플러그인당 디렉토리 하나, 각자 README 보유.
+- `bench/` — 씨딩 버그 평가 하니스: 타겟 앱, 숨겨진 정답 키, 스택을 측정하는
+  on/off 프로토콜.
 - `docs/design.md` — 설계 기록: 기능 중심 라인업, 3층 배포 모델, 로드맵.
+  `docs/proposals/` — 구현에 앞서 동결한 스펙.
 
 v0.1.0 기준 모든 플러그인은 벤치마크 전입니다 — 하우스 룰에 따라 그렇게
-표기합니다.
+표기합니다. 그 표기를 떼는 장치가 `bench/`입니다.

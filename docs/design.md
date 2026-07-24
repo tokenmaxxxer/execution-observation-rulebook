@@ -62,7 +62,7 @@ asked, never guessed; secrets appear as env var *names* only.
 `/qa-init --check` is the doctor: profile present, `gh` authed, issue repo
 reachable, launch command present, named env vars set.
 
-## Company-wide deployment: the 3-layer model
+## Shared deployment: the 3-layer model
 
 Confirmed mechanism: a project's checked-in `.claude/settings.json` may
 declare `extraKnownMarketplaces` + `enabledPlugins`; configured plugins
@@ -72,25 +72,25 @@ Repo-scope plugins also load in `claude -p` headless sessions (not `--bare`).
 Marketplace `version` fields pin plugin versions; stable/latest channels are
 possible via two branches.
 
-1. **Company layer — this marketplace repo.** Company-wide standards live in
-   the plugins themselves (standard bug form fallback, severity fallback
+1. **Marketplace layer — this repo.** Stack-wide standards live in the
+   plugins themselves (standard bug form fallback, severity fallback
    scheme, evidence rules). Standards change by PR here and propagate by
    plugin update.
 2. **Project layer — two committed files per target repo.**
    `.claude/settings.json` (stack auto-installs for every user who opens the
-   repo, CI included — the boundary is repo access plus folder trust, not
-   team membership) and `qa/intake.md` (one shared profile: same tracker,
-   same template, same labels, same launch method for everyone).
+   repo, CI included — the boundary is repo access plus folder trust) and
+   `qa/intake.md` (one shared profile: same tracker, same template, same
+   labels, same launch method for everyone).
 3. **Personal layer — secrets and kill switches.** Values for the env vars
    the profile names; `QA_*_OFF` switches.
 
-Precedence: plugin built-in company standard < intake profile < the user's
+Precedence: plugin built-in stack standard < intake profile < the user's
 session instruction.
 
 Known open items:
 - Whether a trust prompt appears on first auto-install from repo settings is
   undocumented — test once, note in onboarding.
-- `install.sh` (user-scope path) deliberately skipped in v0.1: the company
+- `install.sh` (user-scope path) deliberately skipped in v0.1: the primary
   path is repo-scope settings; individuals can use `/plugin` by hand. Add
   when a standalone-QA-session workflow actually materializes.
 

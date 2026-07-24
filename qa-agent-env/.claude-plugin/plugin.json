@@ -1,13 +1,14 @@
 {
   "name": "qa-agent-env",
-  "version": "0.1.0",
-  "description": "One-install tokenmaxxxer QA environment: pulls in the whole QA stack (intake, testrun, bugreport) as dependencies. Contains no code of its own.",
+  "version": "0.2.0",
+  "description": "One-install tokenmaxxxer QA environment: pulls in the whole QA stack (intake, testrun, bugreport, stats) as dependencies. Contains no code of its own.",
   "author": {
     "name": "tokenmaxxxer"
   },
   "dependencies": [
     "intake",
     "testrun",
-    "bugreport"
+    "bugreport",
+    "stats"
   ]
 }

@@ -1,0 +1,54 @@
+{
+  "target": "todo-cli",
+  "adjudication": "A run detects a bug when a failure entry names the trigger behavior and the wrong outcome of that entry. Variants of one root cause count once toward their entry (e.g. done 0, done abc, remove of the last id).",
+  "seeded": [
+    {
+      "id": "TC-1",
+      "class": "crash-on-bad-input",
+      "trigger": "done with an out-of-range or non-numeric id (e.g. `done 99`, `done abc`)",
+      "expected": "friendly error, nonzero exit",
+      "actual": "raw IndexError/ValueError traceback",
+      "smoke_path": "negative path of done"
+    },
+    {
+      "id": "TC-2",
+      "class": "missing-validation",
+      "trigger": "`add` with an empty/blank title",
+      "expected": "empty title rejected",
+      "actual": "empty item stored and shown by list",
+      "smoke_path": "bad-input path of add"
+    },
+    {
+      "id": "TC-3",
+      "class": "crash-on-corrupt-state",
+      "trigger": "todos.json exists but is empty or invalid JSON, then any command",
+      "expected": "graceful message or self-heal",
+      "actual": "raw json.JSONDecodeError traceback",
+      "smoke_path": "empty/corrupt-state path"
+    },
+    {
+      "id": "TC-4",
+      "class": "off-by-one",
+      "trigger": "two or more items; `remove 1`",
+      "expected": "first item removed (README: ids as shown by list)",
+      "actual": "second item removed (1-based display, 0-based pop); `remove <last id>` raises IndexError",
+      "smoke_path": "happy path of remove, verified via list"
+    },
+    {
+      "id": "TC-5",
+      "class": "silent-data-loss",
+      "trigger": "mark an item done, then `export`; inspect the CSV",
+      "expected": "every item with its status (per README)",
+      "actual": "completed items silently missing from the export",
+      "smoke_path": "happy path of export after done"
+    },
+    {
+      "id": "TC-6",
+      "class": "state-not-reflected",
+      "trigger": "`done 1` then `list`",
+      "expected": "[x] shown for the completed item",
+      "actual": "never shows [x] — done writes key 'done', list reads key 'completed'",
+      "smoke_path": "happy path of done, verified via list"
+    }
+  ]
+}

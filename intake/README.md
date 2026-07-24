@@ -6,7 +6,7 @@ launches, what test stack the project already has — and freezes the answers
 into a single committed file, `qa/intake.md`. Every other plugin in the stack
 reads that file instead of rediscovering (or guessing) per session.
 
-This is what makes the stack work *per project, for a whole team*: one person
+This is what makes the stack work *per project, for every user*: one person
 runs `/qa-init` and commits the profile; from then on every user's QA
 session files issues to the same repo, in the same template, with the same
 labels, launching the app the same way.

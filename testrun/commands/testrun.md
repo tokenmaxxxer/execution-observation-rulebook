@@ -54,11 +54,12 @@ app: <commit/version tested> at <url>
 
 ## Failures
 One block per failure: what was done, expected, actual, evidence. Filed:
-<issue URL> or UNFILED(<reason>).
+<issue URL>, DUP(<existing issue URL>), or UNFILED(<reason>).
 ```
 
 ## 6. Close
 
 Stop the app if this run started it. Summarize: cases run / passed / failed /
 blocked, and for each confirmed failure either file it now via the `/bug`
-discipline or record it as UNFILED with the reason.
+discipline (a duplicate becomes `DUP(<url>)`) or record it as UNFILED with
+the reason.

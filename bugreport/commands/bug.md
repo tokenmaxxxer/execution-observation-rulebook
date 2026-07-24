@@ -22,8 +22,9 @@ From `qa/intake.md`: `issues.repo`, `issues.template`, `issues.labels` /
 
 `gh issue list --repo <repo> --state open --search "<symptom keywords>"`.
 On a likely match: show it, add the new reproduction/evidence as a comment
-instead of filing, and record that issue URL in the run record. Only file a
-new issue when no match holds.
+instead of filing, and record it in the run record as `DUP(<issue URL>)` —
+`/qa-stats` counts these separately from new filings. Only file a new issue
+when no match holds.
 
 ## 3. Compose
 

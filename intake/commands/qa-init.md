@@ -14,6 +14,7 @@ Verify the environment and report a short table — do not modify anything:
 3. The issue repo from the profile is reachable: `gh repo view <issues.repo>`.
 4. The app start command from the profile exists (script/target present — do not launch).
 5. Every env var named in the profile's `env:` list is set in this shell. Report set/unset by NAME only — never print values.
+6. If the profile's `app.url` is set (web UI): a browser automation route exists — browser MCP tools available in this session, or the profile's `tests.framework` browser runner (e.g. playwright) installed. Report which one; `/testrun`'s UI cases depend on it.
 
 Report pass/fail per line with the one command that fixes each failure (e.g. `gh auth login`, `gh auth setup-git`, `/qa-init`). Then stop.
 
@@ -55,9 +56,8 @@ env:                           # names only — values never live in this file
 
 # QA intake — <project>
 
-Main user flows, environments, fragile areas, anything the team should know
-before testing. Free-form, human-edited — discovery never overwrites this
-section.
+Main user flows, environments, fragile areas, anything worth knowing before
+testing. Free-form, human-edited — discovery never overwrites this section.
 ```
 
-Finish with: the profile summary in a few lines, which fields were assumed vs confirmed, and a reminder to commit `qa/intake.md` so the whole team shares it.
+Finish with: the profile summary in a few lines, which fields were assumed vs confirmed, and a reminder to commit `qa/intake.md` so every session shares it.
