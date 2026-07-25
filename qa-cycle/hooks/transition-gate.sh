@@ -6,13 +6,22 @@
 # source; this table is a copy for runtime speed, not a re-derivation) and
 # the project's current phase from state.md. A write that would change
 # state.md is allowed only when (current-phase -> attempted-phase) is a row
-# in that table, and, for the four human-only transitions, only when a
-# matching unconsumed verdict token sits next to state.md.
+# in that table, and, for every row the table marks Actor: human, only when
+# a matching unconsumed verdict token sits next to state.md.
 #
-# Fails closed: unreadable/missing/malformed state or token, or an unset
-# QA_WORKSPACE, all refuse (exit 2) rather than allow.
+# Fails closed: refusal is the default outcome of this script. Every path
+# that is not an affirmative match against the transition table — unreadable
+# stdin, a malformed payload, a missing/malformed state file, an unset
+# QA_WORKSPACE, a missing or mismatched verdict token — exits 2. Allow
+# (exit 0) is reached only via the single explicit success path at the
+# bottom of the embedded Python, after the attempted (from -> to) has been
+# matched against the table and, for human-actor rows, after a matching
+# unconsumed token has been found and consumed.
 #
-# Kill switch: export QA_CYCLE_DISABLE=1
+# Kill switch: export QA_CYCLE_DISABLE=1 — this is a deliberate operator
+# override (an explicit opt-out someone set on purpose), not an instance of
+# the silent-allow bug this file otherwise closes. It intentionally exits 0
+# before any of the refuse-by-default logic below runs.
 set -euo pipefail
 
 case "${QA_CYCLE_DISABLE:-}" in
@@ -35,6 +44,16 @@ import os
 import posixpath
 import re
 import sys
+
+def not_applicable():
+    # This PreToolUse call is not a write this gate governs at all (wrong
+    # tool, or a path outside the workspace's state.md shape). That is not
+    # the same thing as a parse failure or an unexpected shape on a write
+    # this gate *does* govern — those refuse, below. This is the only
+    # function in this script that exits 0 other than the single explicit
+    # allow() at the bottom, and it is reached only once we know the event
+    # parsed cleanly as the expected top-level shape.
+    sys.exit(0)
 
 def allow():
     sys.exit(0)
@@ -64,30 +83,37 @@ TABLE = [
     ("No-Go", "Shipped-Under-Exception", "human"),
 ]
 
-# Human-only transitions per the frozen contract: entry into these four
-# phases is Actor=human AND requires a verdict token regardless of the
-# `actor` column above for the *other* human rows (report-filed's
-# severity/priority-set self-loop, and closed-not-a-defect) — see the
-# ambiguity note in this worker's final report.
-TOKEN_REQUIRED_TARGETS = {"Confirmed-Defect", "Go", "No-Go", "Shipped-Under-Exception"}
+# Every row the spec's table marks Actor: human requires a matching
+# unconsumed verdict token — not only entry into Confirmed-Defect, Go,
+# No-Go, and Shipped-Under-Exception. Keyed by the exact (from, to) pair,
+# not by the target phase alone: `report-filed` is the target of both an
+# agent row (Confirmed-Defect -> report-filed) and a human row
+# (report-filed -> report-filed, the severity/priority-set self-loop), so a
+# target-only set would either wrongly gate the agent row or wrongly skip
+# the human one.
+ACTOR_OF = {(f, t): a for f, t, a in TABLE}
 
-ALLOWED = {(f, t) for f, t, _ in TABLE}
+ALLOWED = set(ACTOR_OF)
 
 try:
     event = json.loads(os.environ.get("QA_CYCLE_PAYLOAD", ""))
 except ValueError:
-    allow()
+    refuse("qa-cycle: refused — the hook payload on stdin could not be parsed as JSON. Refusing rather than allowing a write this gate cannot inspect.")
 if not isinstance(event, dict):
-    allow()
+    refuse("qa-cycle: refused — the hook payload did not parse to a JSON object. Refusing rather than allowing a write this gate cannot inspect.")
 
 tool = event.get("tool_name") or ""
 tool_input = event.get("tool_input")
-if tool not in ("Write", "Edit") or not isinstance(tool_input, dict):
-    allow()
+if tool not in ("Write", "Edit"):
+    # Not a write-shaped tool call at all; this gate has nothing to say
+    # about it. Distinct from the malformed-shape refusals above and below.
+    not_applicable()
+if not isinstance(tool_input, dict):
+    refuse("qa-cycle: refused — a %s call arrived with no readable tool_input. Refusing rather than allowing an uninspectable write." % tool)
 
 path = tool_input.get("file_path")
 if not isinstance(path, str) or not path:
-    allow()
+    refuse("qa-cycle: refused — a %s call arrived with no readable file_path. Refusing rather than allowing an uninspectable write." % tool)
 
 ws = os.environ.get("QA_CYCLE_WORKSPACE", "")
 ws_real = posixpath.normpath(os.path.realpath(ws).replace("\\", "/"))
@@ -98,12 +124,12 @@ path_real = posixpath.normpath(os.path.realpath(path_abs).replace("\\", "/"))
 # Only state.md writes are this gate's business, and only ones inside the
 # workspace root — never trust a path by name alone.
 if not (path_real == ws_real or path_real.startswith(ws_real + "/")):
-    allow()
+    not_applicable()
 
 rel = path_real[len(ws_real) + 1:]
 parts = rel.split("/")
 if len(parts) != 3 or parts[0] != "projects" or parts[2] != "state.md":
-    allow()
+    not_applicable()
 slug = parts[1]
 project_dir = posixpath.join(ws_real, "projects", slug)
 state_path = posixpath.join(project_dir, "state.md")
@@ -165,7 +191,7 @@ if (cur, new) not in ALLOWED:
         % (cur, new, cur, ", ".join(legal) if legal else "(none)")
     )
 
-if new in TOKEN_REQUIRED_TARGETS:
+if ACTOR_OF[(cur, new)] == "human":
     if not os.path.exists(token_path):
         refuse(
             "qa-cycle: refused — %s -> %s is a human-only transition and no verdict token is present at %s.\n"

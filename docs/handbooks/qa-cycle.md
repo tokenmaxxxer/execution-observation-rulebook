@@ -107,11 +107,16 @@ enforce."
    [`docs/specs/qa-cycle-state-machine.md`](../specs/qa-cycle-state-machine.md)
    and checks whether the attempted `from -> to` write is one the table
    permits.
-4. If the transition's Actor is `human` (`Confirmed-Defect`, `Go`, `No-Go`,
-   `Shipped-Under-Exception` per the spec), the gate additionally requires a
-   matching, unconsumed `.verdict-token` — matching on both `transition` and
-   `project`. Without one, it refuses regardless of what phase the project
-   is currently in.
+4. If the specific `from -> to` row's Actor is `human` — every such row in
+   the spec's table, not only entry into `Confirmed-Defect`, `Go`, `No-Go`,
+   and `Shipped-Under-Exception`; the `report-filed -> report-filed`
+   severity/priority-set self-loop and `finding-triage -> closed-not-a-defect`
+   are human rows too — the gate additionally requires a matching, unconsumed
+   `.verdict-token` — matching on both `transition` and `project`. Without
+   one, it refuses regardless of what phase the project is currently in. The
+   check is keyed on the exact `(from, to)` pair, not on the destination
+   phase alone, because a phase like `report-filed` is reached by both an
+   agent row and a human row and the two must not be conflated.
 5. On success (exit 0) the write proceeds and, for a human-only transition,
    the token is consumed (deleted) as part of the same operation.
 6. On refusal (exit 2) the message names the current phase and the set of

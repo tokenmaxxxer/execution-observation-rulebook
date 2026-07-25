@@ -75,8 +75,8 @@ framing that matters: the agent is not *asked* to follow the cycle, it is
 - Plugin boundaries are not protected. The decomposition below is the one
   being adopted for this unit.
 - Every plugin ships a kill-switch environment variable following the
-  existing convention in this repo (`QA_INTAKE_OFF`, `QA_TESTRUN_OFF`,
-  `QA_BUGREPORT_OFF` — "off means off": only explicit truthy-ish values
+  existing convention in this repo (`QA_INTAKE_DISABLE`, `QA_TESTRUN_DISABLE`,
+  `QA_BUGREPORT_DISABLE` — "off means off": only explicit truthy-ish values
   disable a hook, empty/`0`/`false`/`no`/`off` all mean "not off"). Each new
   or newly-hooked plugin's variable is named in this proposal and documented
   in the handbook.
@@ -111,7 +111,7 @@ framing that matters: the agent is not *asked* to follow the cycle, it is
   - `hooks/session-start.sh` — reports the current phase of any project in
     flight, the same shape as `intake`'s existing `SessionStart` hook but
     reading `state.md` instead of `intake.md`.
-  - Kill switch: `QA_CYCLE_OFF`.
+  - Kill switch: `QA_CYCLE_DISABLE`.
   - No other plugin writes `state.md`. A gate cannot be trusted if several
     writers can move the phase out from under it.
 - **New `signoff` plugin** — owns `go-no-go`, `Go`, `No-Go`, and
@@ -137,7 +137,7 @@ framing that matters: the agent is not *asked* to follow the cycle, it is
     nothing. The token is later consumed by `qa-cycle`'s gate at the moment
     it authorizes the corresponding write; one token authorizes exactly one
     transition.
-  - Kill switch: `QA_SIGNOFF_OFF` (covers both hooks).
+  - Kill switch: `QA_SIGNOFF_DISABLE` (covers both hooks).
 - **`intake`, `testrun`, `bugreport`, `regress`** — each keeps its existing
   command surface and gains (or keeps) a `UserPromptSubmit` directive hook.
   Each owns one contiguous span of transitions per the spec's ownership map
@@ -146,17 +146,17 @@ framing that matters: the agent is not *asked* to follow the cycle, it is
   - `intake` gains `hooks/directive.sh` (new) alongside its existing
     `hooks/session-start.sh`; `hooks/hooks.json` gains the `UserPromptSubmit`
     entry next to the existing `SessionStart` one. Kill switch stays
-    `QA_INTAKE_OFF` (applies to both hooks, consistent with the other
+    `QA_INTAKE_DISABLE` (applies to both hooks, consistent with the other
     plugins' single-switch-per-plugin convention).
   - `testrun` and `bugreport` keep their existing `hooks/directive.sh` and
     `hooks/hooks.json`, edited in place to add the COMPOSITION section (see
-    below). Kill switches unchanged (`QA_TESTRUN_OFF`, `QA_BUGREPORT_OFF`).
+    below). Kill switches unchanged (`QA_TESTRUN_DISABLE`, `QA_BUGREPORT_DISABLE`).
   - `regress` gains `hooks/hooks.json` and `hooks/directive.sh` (currently
     ships neither), so its existing three-check adoption gate fires
     automatically instead of only when a human types `/regress`. Kill
-    switch: `QA_REGRESS_OFF`.
+    switch: `QA_REGRESS_DISABLE`.
 - **`stats`** — read-only reporting; gains `hooks/hooks.json` and
-  `hooks/directive.sh`. Owns no transition. Kill switch: `QA_STATS_OFF`.
+  `hooks/directive.sh`. Owns no transition. Kill switch: `QA_STATS_DISABLE`.
 - **`qa-agent-env`** — meta bundle; `dependencies` in
   `qa-agent-env/.claude-plugin/plugin.json` updated to add `qa-cycle` and
   `signoff` to the existing five.
