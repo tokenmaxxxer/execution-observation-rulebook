@@ -1,5 +1,5 @@
 ---
-status: approved
+status: landed
 files:
   - qa-cycle/hooks/transition-gate.sh
   - qa-cycle/hooks/tests/directive-drift-check.sh
