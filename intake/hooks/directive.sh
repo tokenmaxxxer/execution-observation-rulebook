@@ -18,17 +18,17 @@ TRIGGER CONDITIONS:
 - another QA plugin (testrun, bugreport, regress, stats) reports it is operating without a profile.
 
 RULES:
-- `intake` owns exactly one transition in the QA cycle state machine: `(none) -> intake-scoping`, triggered by `/qa-init` run against the target repo. Its required evidence is `intake.md` written with the tracker, issue template, labels, app-launch, test-convention, and env-var-name fields populated — that file is what the gate will demand as proof the transition happened.
-- `intake` never writes the cycle's state file (`state.md`) itself. It requests the `(none) -> intake-scoping` transition; `qa-cycle`'s `PreToolUse` gate is the sole authority that decides whether the write is permitted and the sole writer of `state.md`.
+- `intake` writes the project's QA profile that every feedback item's `observed -> reproducing` transition reads. Its required evidence is `intake.md` written with the tracker, issue template, labels, app-launch, test-convention, and env-var-name fields populated — that file is what the gate will demand as proof an item can be worked at all.
+- `intake` never writes the cycle's state file (`state.md`) itself. It requests item transitions on the plugins that own them; `qa-cycle`'s `PreToolUse` gate is the sole authority that decides whether a write is permitted and the sole writer of `state.md`.
 - Record env var NAMES only, never values. No target-project code is copied into the QA workspace.
 - Discovery over guessing: prefer `git remote`, `.github/ISSUE_TEMPLATE/*`, `gh label list`, package/compose/Makefile inspection to asking the user, and ask only for what cannot be discovered.
 
 NEVER:
 - write or edit `state.md` directly.
 - put a secret value, or any target-project source code, into `intake.md`.
-- claim the `(none) -> intake-scoping` transition happened without `intake.md` actually being written with its required fields.
+- claim `intake.md` is in place without it actually being written with its required fields.
 
-COMPOSITION: `intake` is the entry point of the QA cycle — it receives no handoff from any sibling plugin, and hands off to `testrun`, which reads `intake.md` to take the project from `intake-scoping` into `session-chartered`. `qa-cycle` is the spine every transition request passes through; `intake` never bypasses it.
+COMPOSITION: `intake` is the entry point of the QA cycle — it receives no handoff from any sibling plugin, and hands off to `testrun`, which reads `intake.md` to take a feedback item from `observed` into `reproducing`. `qa-cycle` is the spine every transition request passes through; `intake` never bypasses it.
 </qa-intake-directive>
 EOF
 exit 0

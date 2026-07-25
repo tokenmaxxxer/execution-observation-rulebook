@@ -17,7 +17,7 @@ Trigger conditions: a request for `/qa-stats`, a question about whether the QA s
 
 Rules:
 - READ-ONLY. `/qa-stats` never writes a run record, an evidence file, an issue, or the cycle state file (`state.md`). It only reads `projects/<slug>/runs/*.md` and queries the tracker via `gh`.
-- NO TRANSITION OWNERSHIP. `stats` owns no transition in the QA cycle state machine and never writes `<QA_WORKSPACE>/projects/<owner>-<repo>/state.md` or any `.verdict-token` file, under any circumstance, even when its own report would seem to justify one (e.g. a high acceptance rate does not authorize an `exit-readiness` or `go-no-go` write — that belongs to `qa-cycle`/`signoff`).
+- NO TRANSITION OWNERSHIP. `stats` owns no transition in the QA cycle state machine and never writes `<QA_WORKSPACE>/projects/<owner>-<repo>/state.md` or any `.verdict-token` file, under any circumstance, even when its own report would seem to justify one (e.g. a high acceptance rate does not authorize a `handed-off` or `verified-fixed` write — that belongs to `qa-cycle`/`signoff`).
 - NEVER GUESS AN OUTCOME. If `gh` cannot resolve an issue, count it as unreachable rather than inferring fixed/rejected.
 - NEVER PERSIST THE REPORT. Print it; do not write it to a file.
 
