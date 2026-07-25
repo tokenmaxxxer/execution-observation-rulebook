@@ -1,5 +1,5 @@
 ---
-status: approved
+status: landed
 files:
   - testrun/hooks/directive.sh
   - bugreport/hooks/directive.sh
