@@ -1,7 +1,7 @@
 {
   "name": "testrun",
   "version": "0.1.0",
-  "description": "Test execution: launches the actual product and exercises it — plan-driven when qa/plan.md exists, ad-hoc smoke otherwise. Every verdict carries evidence; run records land under qa/runs/. Report, don't fix: a QA session never edits product code.",
+  "description": "Test execution: launches the actual product and exercises it — plan-driven when qa/plan.md exists, ad-hoc smoke otherwise. Every verdict carries evidence; run records land under qa/runs/. Report, don't fix: a QA session never edits product code. A UserPromptSubmit directive hook injects the charter/timebox/session-sheet discipline and requests testrun's transitions through qa-cycle.",
   "author": {
     "name": "tokenmaxxxer"
   }

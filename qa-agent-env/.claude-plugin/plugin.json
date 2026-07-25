@@ -10,6 +10,8 @@
     "testrun",
     "bugreport",
     "stats",
-    "regress"
+    "regress",
+    "qa-cycle",
+    "signoff"
   ]
 }

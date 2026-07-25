@@ -1,0 +1,8 @@
+{
+  "name": "signoff",
+  "version": "0.1.0",
+  "description": "Human sign-off discipline: captures an unambiguous Go/No-Go/Shipped-Under-Exception/Confirmed-Defect verdict from the user's own turn as a single-use token, and requests the corresponding write through qa-cycle's gate rather than performing it directly.",
+  "author": {
+    "name": "tokenmaxxxer"
+  }
+}

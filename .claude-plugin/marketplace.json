@@ -30,9 +30,19 @@
       "description": "Regression tests with an adoption gate: /regress turns a confirmed bug into an automated test adopted only if it fails on the bug commit and passes stably (k=5) on the fix. Adopted tests live in the QA workspace and run on every /testrun; anything that can't prove itself is discarded, not committed."
     },
     {
+      "name": "qa-cycle",
+      "source": "./qa-cycle",
+      "description": "The QA cycle spine: owns the session state file (projects/<owner>-<repo>/state.md) and the PreToolUse gate that refuses any write the transition table in docs/specs/qa-cycle-state-machine.md disallows for the current phase. Human-only transitions require a matching unconsumed verdict token minted by signoff."
+    },
+    {
+      "name": "signoff",
+      "source": "./signoff",
+      "description": "Human sign-off: /go-no-go records a Go/No-Go/Shipped-Under-Exception verdict against an exit-readiness bundle. Captures an unambiguous verdict from the user's own turn as a single-use token that authorizes exactly one qa-cycle transition."
+    },
+    {
       "name": "qa-agent-env",
       "source": "./qa-agent-env",
-      "description": "One-install QA environment bundle: pulls in the whole tokenmaxxxer QA stack (intake, testrun, bugreport, stats, regress) as dependencies. Contains no code of its own."
+      "description": "One-install QA environment bundle: pulls in the whole tokenmaxxxer QA stack (intake, testrun, bugreport, stats, regress, qa-cycle, signoff) as dependencies. Contains no code of its own."
     }
   ]
 }
