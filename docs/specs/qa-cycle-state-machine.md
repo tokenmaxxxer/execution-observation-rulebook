@@ -29,7 +29,7 @@ The prior revision of this spec tracked one `phase` per project. That axis does 
 | From | To | Trigger | Required evidence | Actor |
 |---|---|---|---|---|
 | `(none)` | `observed` | agent creates the first record of a new item | the observation text | agent |
-| `observed` | `reproducing` | agent begins reproduction | the observation text | agent |
+| `observed` | `reproducing` | agent begins reproduction | the observation text, plus a target declaration | agent |
 | `reproducing` | `reproduced` | reproduction succeeded | the reproduction procedure, recorded on the item | agent |
 | `reproducing` | `observed` | information insufficient to attempt | what was missing | agent |
 | `reproducing` | `parked-unreproducible` | reproduction attempted and failed | what was tried and how it failed | agent |
@@ -89,6 +89,42 @@ and issue #16.
   is distinct from the state-transition token and does not gate any row in
   the transition table above — it gates the `priority` field itself,
   independently of what transition (if any) the same write also attempts.
+
+## Target declaration
+
+The QA cycle exercises an already-running target that the user starts,
+deploys, and stops — the rulebook never manages it, and that stays out of
+scope permanently. But without a recorded declaration of what the target
+actually is, nothing checks a reproduction was run against the target the
+user meant. See
+[docs/proposals/2026-08-05-target-declaration.md](../proposals/2026-08-05-target-declaration.md)
+and issue #22.
+
+**Precondition, stated explicitly:** an item cannot enter `reproducing`
+without a valid target declaration already on disk for the project — the
+gate refuses `observed -> reproducing` whenever
+`<QA_WORKSPACE>/projects/<owner>-<repo>/target.md` is absent, unreadable,
+malformed, or missing a required field (a single non-empty `label` and a
+single non-empty `entry_point`), and whenever the attempted write's own
+run-record evidence does not reference the declared target (by label or
+entry point). This reuses the same `requires` mechanism `severity` already
+uses on `reproducing -> reproduced` — a `requires` entry on this row in
+`transition-gate.sh`'s `TABLE`, not a second, bespoke enforcement path.
+
+- **Actor: agent, content-gated, not token-locked.** `target.md` is
+  agent-writable — the gate holds the transition to the declaration's
+  *content*, not to who authored the write, the same split `intake.md`
+  already uses (agent-discoverable, not human-locked, no verdict token).
+  The target is a fact to be recorded once at the start of QA work, not a
+  subjective judgment call like `priority`.
+- **Path:** `<QA_WORKSPACE>/projects/<owner>-<repo>/target.md`, sibling to
+  that project's `state.md` and `intake.md`, under the same workspace root
+  `transition-gate.sh` already resolves and prefix-checks. Path resolution
+  reuses the same `PROJECT_ID_RE` allow-list and independent
+  resolve-then-contain check already applied to `state_path`/`tokens_dir`.
+- **Shape:** a single frontmatter-shaped block —
+  `label`, `entry_point`, `env_names` (names only, never values, per the
+  rule `intake.md` and `state.md` already follow).
 
 ## Persisted item state
 

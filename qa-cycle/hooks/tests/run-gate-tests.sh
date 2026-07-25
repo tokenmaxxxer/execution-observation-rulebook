@@ -57,6 +57,29 @@ item_block_with_priority() {
   fi
 }
 
+write_target() {
+  # write_target <ws> <slug> <label> <entry_point> [env_names]
+  local ws="$1" slug="$2" label="$3" entry_point="$4" env_names="${5:-}"
+  local dir="${ws}/projects/${slug}"
+  mkdir -p "$dir"
+  {
+    printf -- '---\n'
+    printf 'label: %s\n' "$label"
+    printf 'entry_point: %s\n' "$entry_point"
+    printf 'env_names: %s\n' "$env_names"
+    printf -- '---\n'
+  } > "${dir}/target.md"
+}
+
+item_block_with_evidence() {
+  # item_block_with_evidence <item-id> <state> <evidence-text>
+  # Like item_block, but the evidence field carries the given text — used
+  # to reference a declared target's label/entry_point in the write's own
+  # run-record evidence.
+  local id="$1" state="$2" evidence="$3"
+  printf -- '---\nitem: %s\nstate: %s\nreproduction:\nevidence: %s\n---\n' "$id" "$state" "$evidence"
+}
+
 write_priority_token() {
   # write_priority_token <ws> <slug> <item-id> <value> <phrase>
   local ws="$1" slug="$2" item="$3" value="$4" phrase="$5"
@@ -227,7 +250,8 @@ cleanup_ws() {
 ws1="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws1" "$slug" "$(item_block BUG-1 observed)"
-payload="$(payload_write "${ws1}/projects/${slug}/state.md" "$(item_block BUG-1 reproducing)")"
+write_target "$ws1" "$slug" "staging" "http://localhost:3000"
+payload="$(payload_write "${ws1}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "ran against staging")")"
 run_case "valid-table-permitted-transition" 0 "$ws1" "$payload"
 cleanup_ws "$ws1"
 
@@ -642,6 +666,76 @@ run_case_argv "unrecognized-flag-alone-refuses" 2 "" "" -- --bogus-flag
 #          -> expect allow and still emits the facts (no argv, no ws needed)
 # =========================================================================
 run_case_argv "dump-facts-standalone-no-stdin-allows" 0 "" "" -- --dump-facts
+
+# =========================================================================
+# Case 35: observed -> reproducing with no target.md declared at all
+#          -> expect refuse (docs/proposals/2026-08-05-target-declaration.md).
+# =========================================================================
+ws35="$(new_workspace)"
+slug="owner-repo"
+write_state "$ws35" "$slug" "$(item_block BUG-1 observed)"
+payload="$(payload_write "${ws35}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "ran against staging")")"
+run_case "target-absent-refused" 2 "$ws35" "$payload"
+cleanup_ws "$ws35"
+
+# =========================================================================
+# Case 36: observed -> reproducing with target.md present but empty
+#          (no frontmatter block at all) -> expect refuse.
+# =========================================================================
+ws36="$(new_workspace)"
+slug="owner-repo"
+write_state "$ws36" "$slug" "$(item_block BUG-1 observed)"
+mkdir -p "${ws36}/projects/${slug}"
+: > "${ws36}/projects/${slug}/target.md"
+payload="$(payload_write "${ws36}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "ran against staging")")"
+run_case "target-empty-refused" 2 "$ws36" "$payload"
+cleanup_ws "$ws36"
+
+# =========================================================================
+# Case 37: observed -> reproducing with target.md present but malformed
+#          (missing the required entry_point field) -> expect refuse.
+# =========================================================================
+ws37="$(new_workspace)"
+slug="owner-repo"
+write_state "$ws37" "$slug" "$(item_block BUG-1 observed)"
+mkdir -p "${ws37}/projects/${slug}"
+{
+  printf -- '---\n'
+  printf 'label: staging\n'
+  printf 'env_names: API_KEY\n'
+  printf -- '---\n'
+} > "${ws37}/projects/${slug}/target.md"
+payload="$(payload_write "${ws37}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "ran against staging")")"
+run_case "target-missing-required-field-refused" 2 "$ws37" "$payload"
+cleanup_ws "$ws37"
+
+# =========================================================================
+# Case 38: a crafted project id attempting to escape the workspace root via
+#          the target.md path — same reproduction shape as case 20 (a slug
+#          that is a single real path component under projects/ but
+#          contains characters outside the project-identifier allow-list) —
+#          -> expect refuse, and the forged target.md outside the workspace
+#          is never consulted.
+# =========================================================================
+ws38="$(new_workspace)"
+slug='owner;rm-repo'
+write_state "$ws38" "$slug" "$(item_block BUG-1 observed)"
+write_target "$ws38" "$slug" "staging" "http://localhost:3000"
+payload="$(payload_write "${ws38}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "ran against staging")")"
+run_case "target-project-id-disallowed-characters-refused" 2 "$ws38" "$payload"
+cleanup_ws "$ws38"
+
+# =========================================================================
+# Case 39: a valid target declaration, referenced by the write's own
+#          run-record evidence -> expect allow.
+# =========================================================================
+ws39="$(new_workspace)"
+slug="owner-repo"
+write_state "$ws39" "$slug" "$(item_block BUG-1 observed)"
+write_target "$ws39" "$slug" "staging" "http://localhost:3000" "API_KEY"
+payload="$(payload_write "${ws39}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "reproduced against http://localhost:3000")")"
+run_case "target-valid-declaration-allowed" 0 "$ws39" "$payload"
+cleanup_ws "$ws39"
 
 # --- tally -------------------------------------------------------------------
 

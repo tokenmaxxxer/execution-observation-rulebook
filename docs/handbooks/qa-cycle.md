@@ -144,6 +144,37 @@ unchanged, or that changes more than one item's state at once, is refused
 as having no transition (or an ambiguous one) for the gate to authorize —
 each transition is its own write.
 
+## The target declaration
+
+Path: `<QA_WORKSPACE>/projects/<owner>-<repo>/target.md`, sibling to that
+project's `state.md` and `intake.md`. The full contract — precondition,
+actor, path validation — lives in
+[`docs/specs/qa-cycle-state-machine.md`](../specs/qa-cycle-state-machine.md)
+"Target declaration"; this section covers only the file's shape and what
+breaks without it.
+
+```yaml
+---
+label:            # human label for the target, e.g. "staging"
+entry_point:      # base URL or launch command
+env_names:        # names only, comma- or line-separated; never values
+---
+```
+
+Agent-writable, content-gated, not token-locked — the gate checks what the
+file says, not who wrote it. If it doesn't exist yet when an item is about
+to move `observed -> reproducing`, the agent writes it (label, entry point,
+env var names — never values) before attempting the transition. If the
+user needs to correct a wrong declaration, they say so and the agent
+rewrites the file, the same discipline `intake.md` already follows.
+
+Without a valid declaration, `observed -> reproducing` refuses outright:
+absent, unreadable, or malformed `target.md` (missing or empty `label` or
+`entry_point`) all refuse, as does a write whose own run-record evidence
+does not reference the declared target by label or entry point. No secret
+value is ever written here — environment variable names only, the same
+rule `state.md` and `intake.md` already follow.
+
 ## Item id and project identifier shape
 
 Both `transition-gate.sh` and `signoff`'s verdict-capture hook read an item

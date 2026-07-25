@@ -140,7 +140,7 @@ def refuse(msg):
 # this exact structure — not a second list that mirrors it.
 TABLE = [
     {"from": "(none)", "to": "observed", "actor": "agent", "requires": []},  # bootstrap: first record of a new item
-    {"from": "observed", "to": "reproducing", "actor": "agent", "requires": []},
+    {"from": "observed", "to": "reproducing", "actor": "agent", "requires": ["target"]},
     {"from": "reproducing", "to": "reproduced", "actor": "agent", "requires": ["severity"]},
     {"from": "reproducing", "to": "observed", "actor": "agent", "requires": []},
     {"from": "reproducing", "to": "parked-unreproducible", "actor": "agent", "requires": []},
@@ -490,6 +490,74 @@ if state_change_for_item is not None:
     # declare "severity" in their own `requires` carry this precondition —
     # currently exactly reproducing -> reproduced — see docs/specs/
     # qa-cycle-state-machine.md "Severity and priority".
+    # target precondition: an item cannot enter `reproducing` without a
+    # valid target declaration already on disk for this project. Declared
+    # via "target" in the row's own `requires`, the same mechanism
+    # `severity` uses on reproducing -> reproduced — see docs/specs/
+    # qa-cycle-state-machine.md "Target declaration". target.md is
+    # agent-writable; this gate holds the transition to the declaration's
+    # *content* (a valid, non-empty entry_point and label), not to who
+    # wrote it.
+    if "target" in requires:
+        # Same two-part path treatment every other gate-checked path in
+        # this script gets: the project identifier was already allow-list
+        # validated above (PROJECT_ID_RE) before it was used to build
+        # project_dir; independently, the path built from it here is
+        # resolved to a real path and containment-checked against the
+        # workspace root before it is opened.
+        target_path = posixpath.join(project_dir, "target.md")
+        target_path_real = posixpath.normpath(os.path.realpath(target_path).replace("\\", "/"))
+        if not (target_path_real == ws_real or target_path_real.startswith(ws_real + "/")):
+            refuse("qa-cycle: refused — the resolved target declaration path for this write escapes the workspace root. Refusing rather than reading outside it.")
+
+        if not os.path.exists(target_path_real):
+            refuse(
+                "qa-cycle: refused — item %s: observed -> reproducing requires a target declaration at %s and none "
+                "is present. The agent writes target.md (label, entry_point, env_names — names only, never values) "
+                "before attempting this transition." % (item_id, target_path)
+            )
+        try:
+            with open(target_path_real, encoding="utf-8-sig") as fh:
+                target_text = fh.read(1 << 16)
+        except (OSError, UnicodeDecodeError):
+            refuse("qa-cycle: refused — item %s: %s exists but could not be read. Refusing rather than allowing a transition this gate cannot verify." % (item_id, target_path))
+
+        target_blocks = parse_blocks(target_text)
+        if len(target_blocks) != 1:
+            refuse(
+                "qa-cycle: refused — item %s: %s is not a single well-formed `---`-delimited frontmatter block. "
+                "Refusing rather than guessing which declaration is meant." % (item_id, target_path)
+            )
+        target_block = target_blocks[0]
+
+        def target_field(key):
+            vals = field_values(target_block, key)
+            if len(vals) != 1:
+                return None
+            v = vals[0].strip()
+            return v if v else None
+
+        target_label = target_field("label")
+        target_entry_point = target_field("entry_point")
+        if not target_label or not target_entry_point:
+            refuse(
+                "qa-cycle: refused — item %s: %s is malformed — it must declare exactly one non-empty `label:` and "
+                "exactly one non-empty `entry_point:` line. Absent, empty, or repeated lines all refuse this "
+                "transition." % (item_id, target_path)
+            )
+
+        # The attempted write's own evidence must reference the declared
+        # target (by label or entry point appearing in the new item block)
+        # — a target.md existing elsewhere is not evidence this particular
+        # reproduction attempt was run against it.
+        new_block = next(b for b in new_blocks if block_item_and_state(b)[0] == item_id)
+        if target_label not in new_block and target_entry_point not in new_block:
+            refuse(
+                "qa-cycle: refused — item %s: the write's run-record evidence does not reference the declared "
+                "target (label %r or entry_point %r) from %s. Reference the declared target in this write's "
+                "evidence before attempting observed -> reproducing." % (item_id, target_label, target_entry_point, target_path)
+            )
+
     if "severity" in requires:
         new_block = next(b for b in new_blocks if block_item_and_state(b)[0] == item_id)
         severity = block_severity(new_block)
