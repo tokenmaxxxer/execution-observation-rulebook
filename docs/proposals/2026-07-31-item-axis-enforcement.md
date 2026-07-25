@@ -1,6 +1,6 @@
 ---
 date: 2026-07-31
-status: proposed
+status: landed
 issue: "#12"
 files:
   - qa-cycle/hooks/transition-gate.sh
@@ -112,3 +112,34 @@ signoff. The handbook's documented state-file and token shapes match what
 the rewritten hooks actually read and write. Manual replay of the
 reproduction in `docs/reports/2026-07-29-hunt-gate-execution-check.md`
 against the rewritten gate no longer strands the transition.
+
+## What did not work
+
+- First cut of `signoff/hooks/capture-verdict.sh` tried to infer the target
+  item from state.md the same way the old hook inferred the single
+  in-flight project phase (assume "the one item currently in a
+  human-decidable state"). Replaced: with multiple items in flight, more
+  than one can sit in `reproduced` or `handed-off` at once, so that inference
+  is ambiguous by construction. Now the prompt must name `item <id>`
+  explicitly, and no id means no mint.
+- First cut of the consumption fix used a `PostToolUse` companion hook that
+  deletes the token only after observing the write's actual result.
+  Replaced with the reserve-then-finalize marker approach recorded in
+  `docs/decisions/2026-07-31-token-consumption-ordering.md`: the
+  `PostToolUse` design depends on that hook firing reliably across every
+  abort path this plugin stack doesn't currently guarantee, and getting it
+  wrong trades a stranding bug for a double-spend bug.
+- Considered letting a single `state.md` write carry multiple items'
+  transitions at once (batch writes). Dropped: distinguishing "N legitimate
+  simultaneous transitions" from "one write that also happens to touch
+  other items' unrelated fields" reliably was not worth the complexity: the
+  gate now refuses any write that changes more than one item's state,
+  requiring one write per transition.
+- First pass of the gate rewrite built `token_path`/`consuming_path`
+  straight from the unvalidated `item:` field, with no normalization and no
+  containment check, so a forged path (`item:
+  ../../../../../../../../tmp/evil-item`) bypassed the human-only gate
+  entirely — a before-landing warrant hunt found it
+  (`docs/reports/2026-07-31-hunt-item-axis-enforcement.md`). Fixed by
+  adding an item id / project identifier allow-list plus a resolve-then-contain
+  path check in both `transition-gate.sh` and `capture-verdict.sh`.
