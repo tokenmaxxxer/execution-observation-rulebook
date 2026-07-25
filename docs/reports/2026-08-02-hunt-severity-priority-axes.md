@@ -68,3 +68,52 @@ and the token-reservation logic in `transition-gate.sh`), which the proposal
 explicitly declines to reuse for priority "because it doesn't need
 single-use consumption semantics" — but single-use-ness was never the
 property doing the work; provenance-outside-the-gated-file was.
+
+## before-landing — stance 4: assume the write set cannot carry this work; find the path the build will need that the proposal does not list.
+
+Note: `.warrant-hunt.count` is stuck at 4 and does not advance (manual rotations so far used 0, 1, 3, 2, so 4 was the next unused index for this cycle).
+
+Verdict: FINDING — `testrun/hooks/directive.sh` (not in the declared write set) still describes the `reproducing -> reproduced` transition's required evidence without mentioning the new severity precondition the gate now enforces for that exact transition, so the directive undersells what will actually be refused.
+Kind: silent-failure
+Seed: `git diff main...spec/severity-priority` (adds severity precondition to `qa-cycle/hooks/transition-gate.sh` for the `reproducing -> reproduced` row only; does not touch `testrun/hooks/directive.sh`)
+
+### Reproduce
+```
+WS=/tmp/ws-repro
+rm -rf "$WS"; mkdir -p "$WS/projects/foo-bar/tokens"
+cat > "$WS/projects/foo-bar/state.md" <<'STATE'
+---
+item: item1
+state: reproducing
+---
+STATE
+
+payload=$(python3 -c '
+import json
+new_content = """---
+item: item1
+state: reproduced
+reproduction: steps here
+evidence: cmd+output
+---
+"""
+print(json.dumps({"tool_name":"Write","tool_input":{"file_path":"'"$WS"'/projects/foo-bar/state.md","content":new_content}}))
+')
+echo "$payload" | QA_WORKSPACE="$WS" bash qa-cycle/hooks/transition-gate.sh
+echo "exit: $?"
+
+grep -n "severity" testrun/hooks/directive.sh
+```
+
+### Observed
+The gate refuses:
+```
+qa-cycle: refused — item item1: reproducing -> reproduced requires a valid `severity:` (exactly one line,
+one of {critical, major, minor, trivial}). Absent, empty, or repeated `severity:` lines all mean no severity,
+which refuses this transition.
+exit: 2
+```
+`grep -n "severity" testrun/hooks/directive.sh` returns no match — the directive that `testrun` injects every turn, and that explicitly enumerates "Required evidence" for `reproducing -> reproduced` (reproduction procedure + run-record case table), says nothing about severity being required to make that write succeed.
+
+### Expected
+`testrun/hooks/directive.sh`'s per-transition "Required evidence" bullet for `reproducing -> reproduced` should have been updated in this unit (or added to the write set) to mention the severity precondition it now owns triggering, so an agent following the injected directive does not attempt — and get refused on — a write that omits it.

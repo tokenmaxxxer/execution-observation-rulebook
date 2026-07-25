@@ -1,5 +1,5 @@
 ---
-status: approved
+status: landed
 files:
   - docs/specs/qa-cycle-state-machine.md
   - docs/handbooks/qa-cycle.md
