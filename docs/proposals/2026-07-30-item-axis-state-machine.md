@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: approved
 files:
   - docs/specs/qa-cycle-state-machine.md
   - intake/hooks/directive.sh
@@ -44,3 +44,6 @@ Also reword the directive text in `intake/hooks/directive.sh`, `testrun/hooks/di
 ## How this will be known to have worked
 
 The rewritten spec is reviewable against every constraint above: an item's state and reproduction steps can be traced through at least one full backward-edge cycle (e.g., handoff → re-verify fails → back to reproduction) without leaving the item's own record; all four terminal states are distinct and parked-as-unreproducible has a defined re-entry transition; each of the four human-locked transitions names its verdict-token binding as item+transition; and the decision record states the per-item-vs-per-project choice and its rationale independently of the spec prose.
+
+## What did not work
+
