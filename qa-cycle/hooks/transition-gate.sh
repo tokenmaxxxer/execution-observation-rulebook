@@ -135,13 +135,31 @@ project_dir = posixpath.join(ws_real, "projects", slug)
 state_path = posixpath.join(project_dir, "state.md")
 token_path = posixpath.join(project_dir, ".verdict-token")
 
-FRONTMATTER = re.compile(r"^---\n(.*?)\n---", re.S)
-PHASE = re.compile(r"^phase:\s*(.+?)\s*(?:#.*)?$", re.M)
+# Frontmatter is recognized ONLY as a block opened by a `---` line at the
+# very start of the content (position 0, via \A) and closed by a `---` line
+# later on. Content whose first line is not `---`, or that never closes the
+# block, has no frontmatter at all — a `phase:` line elsewhere in the body
+# must never be read as though it were inside one.
+FRONTMATTER = re.compile(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|\Z)", re.S)
+PHASE = re.compile(r"^phase:\s*(.*?)\s*(?:#.*)?$", re.M)
 
 
 def read_frontmatter(text):
     m = FRONTMATTER.match(text)
     return m.group(1) if m else None
+
+
+def read_phase_from_block(block):
+    """Return the single phase value declared inside a frontmatter block, or
+    None if the block has no `phase:` key, an empty value, or more than one
+    `phase:` key — all of which are refusals, never a silently-picked value."""
+    matches = PHASE.findall(block)
+    if len(matches) != 1:
+        return None
+    value = matches[0].strip()
+    if not value:
+        return None
+    return value
 
 
 def current_phase():
@@ -154,11 +172,11 @@ def current_phase():
         refuse("qa-cycle: refused — %s exists but could not be read. Fix or remove it before attempting a transition." % state_path)
     block = read_frontmatter(text)
     if block is None:
-        refuse("qa-cycle: refused — %s has no readable YAML frontmatter. The current phase cannot be established, so no write is permitted." % state_path)
-    m = PHASE.search(block)
-    if not m:
-        refuse("qa-cycle: refused — %s has no `phase:` field. The current phase cannot be established, so no write is permitted." % state_path)
-    return m.group(1)
+        refuse("qa-cycle: refused — %s has no readable YAML frontmatter (a `---`-delimited block at the very start of the file). The current phase cannot be established, so no write is permitted." % state_path)
+    phase = read_phase_from_block(block)
+    if phase is None:
+        refuse("qa-cycle: refused — %s does not declare exactly one non-empty `phase:` key inside its frontmatter. The current phase cannot be established, so no write is permitted." % state_path)
+    return phase
 
 
 def attempted_phase():
@@ -169,11 +187,13 @@ def attempted_phase():
         content = tool_input.get("new_string")
     if not isinstance(content, str):
         refuse("qa-cycle: refused — could not read the new content of this write, so the attempted phase cannot be determined.")
-    block = read_frontmatter(content) if content.lstrip().startswith("---") else content
-    m = PHASE.search(block if block is not None else content)
-    if not m:
-        refuse("qa-cycle: refused — the write does not carry a readable `phase:` field. Every write to state.md must state the phase it transitions to.")
-    return m.group(1)
+    block = read_frontmatter(content)
+    if block is None:
+        refuse("qa-cycle: refused — the write does not declare a phase in valid frontmatter (a `---`-delimited block at the very start of the content). A `phase:` line elsewhere in the body does not count.")
+    phase = read_phase_from_block(block)
+    if phase is None:
+        refuse("qa-cycle: refused — the write does not declare a phase in valid frontmatter: its frontmatter block must contain exactly one non-empty `phase:` key.")
+    return phase
 
 
 cur = current_phase()

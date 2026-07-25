@@ -72,3 +72,8 @@ kill-switch names and the documents that describe them agree.
   a target-only set either wrongly gates the agent row or wrongly skips the
   human one — the fix keys the check on the exact `(from, to)` pair via the
   table's own actor column instead.
+- reading `phase:` by scanning the whole write content instead of a
+  `---`-delimited frontmatter block does not work: a stray `phase:` line
+  anywhere in the body satisfied the check even with no real frontmatter
+  established, silently approving the transition — caught by the
+  pre-landing hunt.
