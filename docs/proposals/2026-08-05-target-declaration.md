@@ -1,5 +1,5 @@
 ---
-status: approved
+status: landed
 files:
   - docs/specs/qa-cycle-state-machine.md
   - qa-cycle/hooks/transition-gate.sh
