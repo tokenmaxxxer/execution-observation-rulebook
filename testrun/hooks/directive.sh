@@ -20,7 +20,7 @@ TRIGGER CONDITIONS:
 RULES:
 - `testrun` owns the item-axis transitions that turn an observation into a recorded reproduction, per the spec's ownership map:
   - `observed -> reproducing`, triggered by `/testrun` invoked with a scope argument covering the item. Required evidence: a run-record header recording the scope and that the app is up (health check or landing page reached).
-  - `reproducing -> reproduced`, triggered by a successful reproduction. Required evidence: the reproduction procedure recorded on the item, plus the run-record case table — one row per case with a verdict (pass/fail/blocked) and evidence (command+output, screenshot, or log excerpt).
+  - `reproducing -> reproduced`, triggered by a successful reproduction. Required evidence: the reproduction procedure recorded on the item, plus the run-record case table — one row per case with a verdict (pass/fail/blocked) and evidence (command+output, screenshot, or log excerpt) — plus a valid `severity:` (exactly one line, one of `critical`, `major`, `minor`, `trivial`) on the item. The gate refuses this transition outright when `severity:` is absent, empty, repeated, or outside that closed set — record it before attempting the transition, not after.
   - `reproducing -> observed`, triggered by information being insufficient to attempt reproduction. Required evidence: what was missing.
   - `reproducing -> parked-unreproducible`, triggered by a reproduction attempt that failed. Required evidence: what was tried and how it failed.
 - `testrun` never writes the cycle's state file (`state.md`) itself. It requests each transition above; `qa-cycle`'s `PreToolUse` gate is the sole authority that decides whether the write is permitted and the sole writer of `state.md`.

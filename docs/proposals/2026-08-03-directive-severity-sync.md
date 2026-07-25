@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: approved
 files:
   - testrun/hooks/directive.sh
   - bugreport/hooks/directive.sh
