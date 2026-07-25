@@ -118,31 +118,75 @@ against whatever contract the work repo carries; `qa-cycle/hooks/transition-gate
 resolves that repo's git root and refuses handoff-protocol actions if that
 file is absent there, rather than proceeding without one.
 
-**ACCEPTS.** None. qa works from direct observation of the running system,
-not from other roles' records. It uniformly refuses `hypothesis`,
-`build-proposal`, `feasibility-record`, `review-record`, and `ops-state` if
-any is handed over as if it were required input.
+**WAKES-ON.** qa wakes on any commit touching `src/` or `tests/` in the
+running system (contract §3, qa's row). This replaces the old ACCEPTS
+framing entirely — v2 has no accept/refuse-at-handoff moment for qa to gate
+on; there is no single moment at which qa is handed a parcel and must decide
+whether to take it.
 
-**WHERE UPSTREAM LIVES.** Not applicable — qa accepts no upstream kind, so
-there is no pointer for it to resolve.
+**READ / DEPENDS-ON / NEVER-OVERWRITE** (contract §4, §11).
 
-**PRODUCES.**
+- READ is broad and unconditional: qa may open any board record, including
+  `feasibility-record`, `hypothesis`, `build-proposal`, `review-record`, and
+  `ops-record`, as advisory context — for example, `feasibility-record`'s
+  `measurement_design`. This is a **reversal** of the previous text, which
+  read "qa... uniformly refuses `hypothesis`, `build-proposal`,
+  `feasibility-record`, `review-record`, and `ops-state` if any is handed
+  over as if it were required input" — that was a read-ban in practice, and
+  v2 explicitly is not one.
+- DEPENDS-ON is empty for qa. The direct-observation principle survives, but
+  as the *reason* DEPENDS-ON is empty, not as a read ban: a qa verdict must
+  be built from direct observation of the running system, never cited as
+  resting on another role's record, even though qa may read that record.
+- NEVER-OVERWRITE: qa writes only `docs/reports/records/<subject>/qa.md` and
+  `docs/reports/records/<subject>/qa/**`. An existing record already at a
+  path qa does not own under `docs/reports/records/`: refuse and report the
+  conflict — path and whose territory it falls in — never overwrite or merge
+  into it silently.
+
+**Blackboard record spec** (§7, §2's `qa-record` row).
 
 | kind | path | required fields beyond common header |
 |---|---|---|
-| `qa-state` | `docs/reports/records/<subject>/qa.md` (in-repo pointer) | role status (`observed,reproducing,reproduced,handed-off,re-verifying,verified-fixed,not-a-defect,wont-fix`), `path:` pointer into `$QA_WORKSPACE`, plus the common header including `handoff_status` |
-| `qa-evidence` | `$QA_WORKSPACE/projects/<owner>-<repo>/**` (out-of-repo, section 6 exception) | intake profile, bug reports, regression records, run stats — as defined by this rulebook's own templates |
+| `qa-record` | `docs/reports/records/<subject>/qa.md` plus `docs/reports/records/<subject>/qa/**` | `loop_state:` (`observed,reproducing,reproduced,handed-off,re-verifying,verified-fixed,not-a-defect,wont-fix`), plus the common header including `handoff_status` |
 
-**STOPS.**
+The two former output kinds, `qa-state` and `qa-evidence`, collapse into
+this single `qa-record` kind — §2 defines one row per role, not two.
 
-- Upstream stale at role entry: applies only if qa is ever handed a pointer
-  despite accepting nothing — the check still exists as a backstop.
-- An existing record already at a path qa does not own under
-  `docs/reports/records/`: refuse and report the conflict — path and whose
-  territory it falls in — never overwrite or merge into it silently.
-- Input carrying `handoff_status: provisional` that qa is not permitted to
-  consume as final: moot in the common case since qa accepts no kind, but
-  stated for the edge case of a stray handoff.
+**This section abolishes the `$QA_WORKSPACE` external, host-local,
+uncommitted tree as the home for qa's cross-role-visible evidence.**
+Intake profile, bug reports, regression records, and run stats now live
+entirely in-repo under `docs/reports/records/<subject>/qa/**` alongside
+`qa.md` itself, per contract §10: "v1 kept qa's bulk evidence (intake
+profile, run logs, regression history) in `$QA_WORKSPACE`, an external,
+host-local, uncommitted tree, with only a thin pointer record left inside
+the repo. That exception is abolished." This is a migration of where qa's
+bulk evidence physically lives, not a documentation wording change, and it
+is this section's highest-risk item: `qa-cycle/`'s `intake/`, `testrun/`,
+`bugreport/`, `regress/`, `signoff/`, and `stats/` plugins all currently
+read or write `$QA_WORKSPACE` paths for qa's *internal item-level state
+machine* (`docs/specs/qa-cycle-state-machine.md`), and that machinery is
+**not** touched by this change — only the cross-role-visible blackboard
+record's location moves. See `docs/proposals/2026-07-26-contract-v2-conformance.md`
+for why the item-level migration is deferred as a separate follow-on.
+
+**Finding back-edge** (§5). qa produces `finding` blocks
+`addressed_to: coding` for defects it finds. §3's WAKES-ON table gives
+coding, not qa, the row that wakes on a `finding addressed_to` it. qa's own
+WAKES-ON row is exclusively the `src/`/`tests/` commit trigger above — qa
+does not also wake on findings addressed to it.
+
+**Cycle termination** (§6, qa↔coding). A `finding` from qa produces a
+`finding-response` from coding; coding's fix produces a new commit; that
+commit wakes qa again (§3). The cycle terminates only when a qa wake
+produces a `verified-fixed` write with no new `finding`, or a genuinely new
+`finding`. Per §6: "a wake that reproduces an already-filed, unresolved
+finding without adding new information is not a new board change... and
+does not re-open the cycle" — this is what keeps qa↔coding from
+ping-ponging forever.
+
+**Loop-termination rule** (§6, general form). A wake is consumed only by
+writing the resulting record entry; writing nothing does not consume it.
 
 ## Kill switches
 
