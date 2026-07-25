@@ -22,7 +22,29 @@ case's observed exit code differed from expected. Every temporary workspace
 it creates is removed on exit, including on failure — nothing is left under
 `/tmp`, and nothing is ever written into a real `~/qa-workspace` checkout.
 
+Each case runs with `QA_WORKSPACE` and `QA_CYCLE_DISABLE` cleared from the
+inherited environment and re-added only if the case declares them, so a case
+labelled "unset" really is unset — `env` passes the caller's environment
+through, and every machine that runs this rulebook exports `QA_WORKSPACE`.
+
+## Interpreters
+
+The case runner works on bash 3.2 — macOS's `/bin/bash`, the last GPLv2
+release — as well as on 4.x/5.x.
+
+`directive-drift-check.sh` does not: it needs associative arrays, so it
+needs bash 4+. Under 3.2 it names the missing interpreter and exits **3**,
+distinct from the 1 it uses for drift found. `run-gate-tests.sh` reports
+that as `DID NOT RUN` and does not count it as a failure — a permanently
+red tally on macOS would bury the case results that are real. **Did not run
+is not passed**: on a machine without bash 4+, the drift check has told you
+nothing.
+
 ## Cases covered
+
+The numbered list below is the original set and has not been extended as
+cases were added; the runner currently executes 52. Its tally line is the
+authority on the count, not this list.
 
 1. Valid table-permitted transition (agent actor) — expect allow.
 2. Transition not permitted from the current item state — expect refuse.
@@ -93,7 +115,7 @@ and what they mean.
 ## `directive-drift-check.sh`
 
 A separate script, run as the final step of `run-gate-tests.sh` (and
-runnable standalone), that checks a different thing than the 30 cases
+runnable standalone), that checks a different thing than the exit-code cases
 above: not the gate's observed exit codes, but whether the seven
 `*/hooks/directive.sh` files' prose still matches what the gate enforces.
 

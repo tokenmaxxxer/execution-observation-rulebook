@@ -78,7 +78,7 @@ fi
 # normal adjudication path below is untouched and still reads its payload
 # with a single `cat` exactly as it does today.
 if [ "$dump_facts" = 1 ]; then
-  if IFS= read -r -t 0.1 -n 1 _dump_facts_stdin_peek; then
+  if IFS= read -r -t 1 -n 1 _dump_facts_stdin_peek; then
     echo "qa-cycle: refused — --dump-facts was invoked with a hook payload present on stdin. --dump-facts is a read-only diagnostic path reachable only as a deliberate, standalone invocation; it never adjudicates a payload. Refusing rather than treating this as a diagnostic call." >&2
     exit 2
   fi
