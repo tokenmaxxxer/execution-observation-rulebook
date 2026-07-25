@@ -1,6 +1,6 @@
 ---
 date: 2026-07-31
-status: approved
+status: landed
 issue: "#12"
 files:
   - qa-cycle/hooks/transition-gate.sh
