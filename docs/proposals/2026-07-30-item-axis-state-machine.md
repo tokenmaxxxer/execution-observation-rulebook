@@ -47,3 +47,5 @@ The rewritten spec is reviewable against every constraint above: an item's state
 
 ## What did not work
 
+- The frozen contract does not name which plugin owns each item-axis transition; the ownership map had to be inferred from the old spec's map and each plugin's existing directive prose rather than being handed down. Flagged as an inference, not a verbatim carryover.
+
