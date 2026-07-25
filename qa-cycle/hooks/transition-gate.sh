@@ -140,7 +140,7 @@ def refuse(msg):
 # this exact structure — not a second list that mirrors it.
 TABLE = [
     {"from": "(none)", "to": "observed", "actor": "agent", "requires": []},  # bootstrap: first record of a new item
-    {"from": "observed", "to": "reproducing", "actor": "agent", "requires": []},
+    {"from": "observed", "to": "reproducing", "actor": "agent", "requires": ["target"]},
     {"from": "reproducing", "to": "reproduced", "actor": "agent", "requires": ["severity"]},
     {"from": "reproducing", "to": "observed", "actor": "agent", "requires": []},
     {"from": "reproducing", "to": "parked-unreproducible", "actor": "agent", "requires": []},
@@ -150,7 +150,7 @@ TABLE = [
     {"from": "reproduced", "to": "wont-fix", "actor": "human", "requires": ["token"]},
     {"from": "handed-off", "to": "re-verifying", "actor": "human", "requires": ["token"]},
     {"from": "re-verifying", "to": "verified-fixed", "actor": "agent", "requires": []},
-    {"from": "re-verifying", "to": "reproducing", "actor": "agent", "requires": []},
+    {"from": "re-verifying", "to": "reproducing", "actor": "agent", "requires": ["target"]},
 ]
 
 # `priority` and `severity` are fields, not transitions — they sit beside
@@ -393,11 +393,25 @@ def item_priority_from_text(text, item_id):
 def current_state_text():
     if not os.path.exists(state_path):
         return ""
+    # A truncated read is never a verdict: this gate judges structure
+    # (block count, item/state pairs) over the *whole* file, so a cap that
+    # silently drops the tail could make an ambiguous file (e.g. two blocks
+    # for the same item, the second past the cap) look well-formed. Read one
+    # byte past the cap; if that extra byte materializes, the file exceeds
+    # what this gate can adjudicate and it refuses rather than guessing from
+    # a prefix.
+    cap = 1 << 20
     try:
         with open(state_path, encoding="utf-8-sig") as fh:
-            return fh.read(1 << 20)
+            text = fh.read(cap + 1)
     except (OSError, UnicodeDecodeError):
         refuse("qa-cycle: refused — %s exists but could not be read. Fix or remove it before attempting a transition." % state_path)
+    if len(text) > cap:
+        refuse(
+            "qa-cycle: refused — %s exceeds the %d-byte cap this gate reads. An oversized state file is an "
+            "unadjudicable input; refusing rather than judging structure from a truncated prefix." % (state_path, cap)
+        )
+    return text
 
 
 def attempted_content():
@@ -490,6 +504,89 @@ if state_change_for_item is not None:
     # declare "severity" in their own `requires` carry this precondition —
     # currently exactly reproducing -> reproduced — see docs/specs/
     # qa-cycle-state-machine.md "Severity and priority".
+    # target precondition: an item cannot enter `reproducing` without a
+    # valid target declaration already on disk for this project. This
+    # attaches to the DESTINATION state, not to one row: every row in TABLE
+    # whose `to` is "reproducing" declares "target" in its own `requires`
+    # (currently observed -> reproducing and re-verifying -> reproducing),
+    # the same generic per-row mechanism `severity` uses on
+    # reproducing -> reproduced — see docs/specs/qa-cycle-state-machine.md
+    # "Target declaration". target.md is agent-writable; this gate holds
+    # the transition to the declaration's *content* (a valid, non-empty
+    # entry_point and label), not to who wrote it.
+    if "target" in requires:
+        # Same two-part path treatment every other gate-checked path in
+        # this script gets: the project identifier was already allow-list
+        # validated above (PROJECT_ID_RE) before it was used to build
+        # project_dir; independently, the path built from it here is
+        # resolved to a real path and containment-checked against the
+        # workspace root before it is opened.
+        target_path = posixpath.join(project_dir, "target.md")
+        target_path_real = posixpath.normpath(os.path.realpath(target_path).replace("\\", "/"))
+        if not (target_path_real == ws_real or target_path_real.startswith(ws_real + "/")):
+            refuse("qa-cycle: refused — the resolved target declaration path for this write escapes the workspace root. Refusing rather than reading outside it.")
+
+        if not os.path.exists(target_path_real):
+            refuse(
+                "qa-cycle: refused — item %s: %s -> reproducing requires a target declaration at %s and none "
+                "is present. The agent writes target.md (label, entry_point, env_names — names only, never values) "
+                "before attempting this transition." % (item_id, cur, target_path)
+            )
+        # A truncated read is never a verdict: block count (len == 1) is
+        # judged over the whole file, never a prefix — a second `---` block
+        # that falls past a silent cap must not be able to flip an
+        # ambiguous, refuse-worthy file into a well-formed one. Read one
+        # byte past the cap; if that extra byte materializes, the
+        # declaration exceeds what this gate can adjudicate and it refuses.
+        target_cap = 1 << 16
+        try:
+            with open(target_path_real, encoding="utf-8-sig") as fh:
+                target_text = fh.read(target_cap + 1)
+        except (OSError, UnicodeDecodeError):
+            refuse("qa-cycle: refused — item %s: %s exists but could not be read. Refusing rather than allowing a transition this gate cannot verify." % (item_id, target_path))
+        if len(target_text) > target_cap:
+            refuse(
+                "qa-cycle: refused — item %s: %s exceeds the %d-byte cap this gate reads. An oversized "
+                "declaration is an unadjudicable input; refusing rather than judging block structure from a "
+                "truncated prefix." % (item_id, target_path, target_cap)
+            )
+
+        target_blocks = parse_blocks(target_text)
+        if len(target_blocks) != 1:
+            refuse(
+                "qa-cycle: refused — item %s: %s is not a single well-formed `---`-delimited frontmatter block. "
+                "Refusing rather than guessing which declaration is meant." % (item_id, target_path)
+            )
+        target_block = target_blocks[0]
+
+        def target_field(key):
+            vals = field_values(target_block, key)
+            if len(vals) != 1:
+                return None
+            v = vals[0].strip()
+            return v if v else None
+
+        target_label = target_field("label")
+        target_entry_point = target_field("entry_point")
+        if not target_label or not target_entry_point:
+            refuse(
+                "qa-cycle: refused — item %s: %s is malformed — it must declare exactly one non-empty `label:` and "
+                "exactly one non-empty `entry_point:` line. Absent, empty, or repeated lines all refuse this "
+                "transition." % (item_id, target_path)
+            )
+
+        # The attempted write's own evidence must reference the declared
+        # target (by label or entry point appearing in the new item block)
+        # — a target.md existing elsewhere is not evidence this particular
+        # reproduction attempt was run against it.
+        new_block = next(b for b in new_blocks if block_item_and_state(b)[0] == item_id)
+        if target_label not in new_block and target_entry_point not in new_block:
+            refuse(
+                "qa-cycle: refused — item %s: the write's run-record evidence does not reference the declared "
+                "target (label %r or entry_point %r) from %s. Reference the declared target in this write's "
+                "evidence before attempting %s -> reproducing." % (item_id, target_label, target_entry_point, target_path, cur)
+            )
+
     if "severity" in requires:
         new_block = next(b for b in new_blocks if block_item_and_state(b)[0] == item_id)
         severity = block_severity(new_block)

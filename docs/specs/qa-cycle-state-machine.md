@@ -29,7 +29,7 @@ The prior revision of this spec tracked one `phase` per project. That axis does 
 | From | To | Trigger | Required evidence | Actor |
 |---|---|---|---|---|
 | `(none)` | `observed` | agent creates the first record of a new item | the observation text | agent |
-| `observed` | `reproducing` | agent begins reproduction | the observation text | agent |
+| `observed` | `reproducing` | agent begins reproduction | the observation text, plus a target declaration | agent |
 | `reproducing` | `reproduced` | reproduction succeeded | the reproduction procedure, recorded on the item | agent |
 | `reproducing` | `observed` | information insufficient to attempt | what was missing | agent |
 | `reproducing` | `parked-unreproducible` | reproduction attempted and failed | what was tried and how it failed | agent |
@@ -39,7 +39,7 @@ The prior revision of this spec tracked one `phase` per project. That axis does 
 | `reproduced` | `wont-fix` | human accepts it as a defect but declines a fix | verdict token | human |
 | `handed-off` | `re-verifying` | human says a fix landed | verdict token + the item's recorded reproduction procedure | human |
 | `re-verifying` | `verified-fixed` | re-run of the recorded procedure no longer shows the problem | the re-run result | agent |
-| `re-verifying` | `reproducing` | re-run still shows the problem | the re-run result | agent |
+| `re-verifying` | `reproducing` | re-run still shows the problem | the re-run result, plus a target declaration | agent |
 
 This table has 12 rows and is exhaustive: no other transition is legal. `(none)` is not a state an item ever records — it is the pre-existence marker for "this item id has no prior block" and only ever appears as a `From`. The graph is non-linear by design — `reproducing → observed`, `reproducing → parked-unreproducible`, `parked-unreproducible → observed`, and `re-verifying → reproducing` are backward edges, and they are normal transitions, not error paths.
 
@@ -89,6 +89,48 @@ and issue #16.
   is distinct from the state-transition token and does not gate any row in
   the transition table above — it gates the `priority` field itself,
   independently of what transition (if any) the same write also attempts.
+
+## Target declaration
+
+The QA cycle exercises an already-running target that the user starts,
+deploys, and stops — the rulebook never manages it, and that stays out of
+scope permanently. But without a recorded declaration of what the target
+actually is, nothing checks a reproduction was run against the target the
+user meant. See
+[docs/proposals/2026-08-05-target-declaration.md](../proposals/2026-08-05-target-declaration.md)
+and issue #22.
+
+**Precondition, stated explicitly:** an item cannot enter `reproducing`
+without a valid target declaration already on disk for the project. This
+attaches to `reproducing` as a DESTINATION STATE, not to a single row: every
+row in the transition table above whose `To` is `reproducing` carries it —
+today that is both `observed -> reproducing` and `re-verifying ->
+reproducing`. The gate refuses either transition whenever
+`<QA_WORKSPACE>/projects/<owner>-<repo>/target.md` is absent, unreadable,
+malformed, or missing a required field (a single non-empty `label` and a
+single non-empty `entry_point`), and whenever the attempted write's own
+run-record evidence does not reference the declared target (by label or
+entry point). This reuses the same `requires` mechanism `severity` already
+uses on `reproducing -> reproduced` — a `requires` entry on each row in
+`transition-gate.sh`'s `TABLE` whose `to` is `reproducing`, not a second,
+bespoke enforcement path and not a per-row special case a future row into
+`reproducing` could silently miss: any further row landing an item in
+`reproducing` gets the same `requires: ["target"]` treatment.
+
+- **Actor: agent, content-gated, not token-locked.** `target.md` is
+  agent-writable — the gate holds the transition to the declaration's
+  *content*, not to who authored the write, the same split `intake.md`
+  already uses (agent-discoverable, not human-locked, no verdict token).
+  The target is a fact to be recorded once at the start of QA work, not a
+  subjective judgment call like `priority`.
+- **Path:** `<QA_WORKSPACE>/projects/<owner>-<repo>/target.md`, sibling to
+  that project's `state.md` and `intake.md`, under the same workspace root
+  `transition-gate.sh` already resolves and prefix-checks. Path resolution
+  reuses the same `PROJECT_ID_RE` allow-list and independent
+  resolve-then-contain check already applied to `state_path`/`tokens_dir`.
+- **Shape:** a single frontmatter-shaped block —
+  `label`, `entry_point`, `env_names` (names only, never values, per the
+  rule `intake.md` and `state.md` already follow).
 
 ## Persisted item state
 
