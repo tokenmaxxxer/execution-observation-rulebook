@@ -5,8 +5,15 @@
 # Kill switch: export QA_SIGNOFF_DISABLE=1
 #
 # This hook never blocks. Malformed/unreadable input, no workspace, no
-# project state, or an ambiguous/absent verdict all mean: emit nothing,
-# exit 0.
+# project state, no identifiable item, or an ambiguous/absent verdict all
+# mean: emit nothing, exit 0.
+#
+# state.md now holds one record per feedback item, not a single project
+# `phase` (docs/handbooks/qa-cycle.md "The state file"). A verdict must
+# therefore name which item it concerns; this hook requires the prompt to
+# mention the item id explicitly (`item <id>`) so the token it mints can
+# bind to both that item id and the exact (from, to) pair, per
+# docs/specs/qa-cycle-state-machine.md "Human decision points".
 set -euo pipefail
 
 case "${QA_SIGNOFF_DISABLE:-}" in
@@ -22,6 +29,7 @@ ws="${QA_WORKSPACE:-}"
 ws="$(cd "$ws" 2>/dev/null && pwd)" || exit 0
 
 command -v jq >/dev/null 2>&1 || exit 0
+command -v python3 >/dev/null 2>&1 || exit 0
 
 payload="$(cat 2>/dev/null || true)"
 [ -n "$payload" ] || exit 0
@@ -44,7 +52,40 @@ esac
 state_file="$proj_dir/state.md"
 [ -f "$state_file" ] || exit 0
 
-phase=$(sed -n 's/^[[:space:]]*phase:[[:space:]]*//p' "$state_file" | head -1 | tr -d '\r')
+# --- identify the item this turn concerns ------------------------------
+# Required, explicit form: "item <id>" (case-insensitive), id = word
+# characters, dots, dashes, underscores. No item id, no mint — this hook
+# never guesses which item a bare "confirmed defect" refers to.
+item_id="$(echo "$prompt" | grep -ioE '\bitem[[:space:]]+[A-Za-z0-9][A-Za-z0-9._-]*' | head -1 | sed -E 's/^[Ii][Tt][Ee][Mm][[:space:]]+//')"
+[ -n "$item_id" ] || exit 0
+
+# Current state of that item, read the same way the gate reads it: the
+# single `state:` key inside the one block whose `item:` key matches.
+phase="$(python3 - "$state_file" "$item_id" <<'PY' 2>/dev/null || true
+import re, sys
+path, item_id = sys.argv[1], sys.argv[2]
+try:
+    with open(path, encoding="utf-8-sig") as fh:
+        text = fh.read(1 << 20)
+except OSError:
+    sys.exit(0)
+BLOCK_RE = re.compile(r"^---[ \t]*\r?\n(.*?)\r?\n---[ \t]*\r?\n?", re.M | re.S)
+ITEM_KEY = re.compile(r"^item:\s*(.*?)\s*(?:#.*)?$", re.M)
+STATE_KEY = re.compile(r"^state:\s*(.*?)\s*(?:#.*)?$", re.M)
+matches = []
+for m in BLOCK_RE.finditer(text):
+    block = m.group(1)
+    items = ITEM_KEY.findall(block)
+    states = STATE_KEY.findall(block)
+    if len(items) == 1 and items[0].strip() == item_id:
+        if len(states) == 1 and states[0].strip():
+            matches.append(states[0].strip())
+        else:
+            matches.append(None)
+if len(matches) == 1 and matches[0]:
+    print(matches[0])
+PY
+)"
 [ -n "$phase" ] || exit 0
 
 # --- Unambiguous verdict detection -----------------------------------
@@ -55,21 +96,18 @@ phase=$(sed -n 's/^[[:space:]]*phase:[[:space:]]*//p' "$state_file" | head -1 | 
 
 to=""
 case "$phase" in
-  finding-triage)
-    if echo "$prompt" | grep -qiE '\b(confirmed[- ]defect|confirm(ing)? (this|it) (as )?a defect|this is (a real|a genuine|a) defect|ruling this a defect)\b'; then
-      to="Confirmed-Defect"
+  reproduced)
+    if echo "$prompt" | grep -qiE '\b(confirmed[- ]defect|confirm(ing)? (this|it) (as )?a defect|this is (a real|a genuine|a) defect|ruling this a defect|hand(ing)? (this|it) (off|over))\b'; then
+      to="handed-off"
+    elif echo "$prompt" | grep -qiE '\b(not a defect|not a bug|declin(e|ing) to call (this|it) a defect|no defect here)\b'; then
+      to="not-a-defect"
+    elif echo "$prompt" | grep -qiE "\b(won'?t[- ]fix|wont[- ]fix|accept(ing)? (this |it )?as a defect but (not|declin\w*) fix)\b"; then
+      to="wont-fix"
     fi
     ;;
-  go-no-go)
-    if echo "$prompt" | grep -qiE '\bno[- ]go\b'; then
-      to="No-Go"
-    elif echo "$prompt" | grep -qiE '(^|[^a-zA-Z-])go([^a-zA-Z-]|$).*(ship|release|clear)|( ship| release| clear).*(^|[^a-zA-Z-])go([^a-zA-Z-]|$)'; then
-      to="Go"
-    fi
-    ;;
-  No-Go)
-    if echo "$prompt" | grep -qiE '\b(shipped[- ]under[- ]exception|ship (it )?under exception|override the no-go|overriding the no-go)\b'; then
-      to="Shipped-Under-Exception"
+  handed-off)
+    if echo "$prompt" | grep -qiE '\b(fix (has )?landed|the fix is in|fix (is )?merged|re-?verify|re-?run the (reproduction|repro))\b'; then
+      to="re-verifying"
     fi
     ;;
 esac
@@ -84,7 +122,7 @@ fi
 # --- Extract and sanitize the load-bearing phrase ---------------------
 # Take the sentence/line containing the verdict as the phrase.
 phrase="$(echo "$prompt" | grep -iE '.' | grep -miE 1 -E \
-  '(confirmed[- ]defect|defect|no[- ]go|shipped[- ]under[- ]exception|override|\bgo\b)' || true)"
+  '(confirmed[- ]defect|defect|not a bug|won.?t.?fix|hand(ing)? (this|it) (off|over)|fix (has )?landed|re-?verify)' || true)"
 [ -n "$phrase" ] || phrase="$prompt"
 
 # Trim to a reasonable length.
@@ -98,12 +136,14 @@ if echo "$phrase" | grep -qiE '(api[_-]?key|secret|password|passwd|token=|bearer
 fi
 
 transition="$phase -> $to"
-token_file="$proj_dir/.verdict-token"
+tokens_dir="$proj_dir/tokens"
+mkdir -p "$tokens_dir"
+token_file="$tokens_dir/${item_id}.token"
 
-tmp="$(mktemp "${proj_dir}/.verdict-token.XXXXXX")"
+tmp="$(mktemp "${tokens_dir}/.token.XXXXXX")"
 {
+  printf 'item: %s\n' "$item_id"
   printf 'transition: %s\n' "$transition"
-  printf 'project: %s\n' "$slug"
   # YAML single-quoted scalar; escape embedded single quotes by doubling.
   esc="${phrase//\'/\'\'}"
   printf "phrase: '%s'\n" "$esc"

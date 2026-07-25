@@ -3,20 +3,27 @@
 #
 # Reads the transition table below (encoded from
 # docs/specs/qa-cycle-state-machine.md "Transition table" — that file is the
-# source; this table is a copy for runtime speed, not a re-derivation) and
-# the project's current phase from state.md. A write that would change
-# state.md is allowed only when (current-phase -> attempted-phase) is a row
-# in that table, and, for every row the table marks Actor: human, only when
-# a matching unconsumed verdict token sits next to state.md.
+# source; this table is a copy for runtime speed, not a re-derivation) and,
+# for the specific feedback item a write touches, that item's current state
+# from state.md. A write that would change one item's state is allowed only
+# when (current-state -> attempted-state) is a row in that table for that
+# item, and, for every row the table marks Actor: human, only when a
+# matching unconsumed verdict token for that exact item and (from, to) pair
+# sits next to state.md.
+#
+# state.md now holds one record per feedback item (see docs/handbooks/qa-cycle.md
+# "The state file"), not a single project-wide `phase`. This gate is keyed on
+# the item axis throughout.
 #
 # Fails closed: refusal is the default outcome of this script. Every path
 # that is not an affirmative match against the transition table — unreadable
 # stdin, a malformed payload, a missing/malformed state file, an unset
-# QA_WORKSPACE, a missing or mismatched verdict token — exits 2. Allow
-# (exit 0) is reached only via the single explicit success path at the
-# bottom of the embedded Python, after the attempted (from -> to) has been
-# matched against the table and, for human-actor rows, after a matching
-# unconsumed token has been found and consumed.
+# QA_WORKSPACE, a missing or mismatched verdict token, an ambiguous write
+# touching more than one item's state — exits 2. Allow (exit 0) is reached
+# only via the single explicit success path at the bottom of the embedded
+# Python, after the attempted (item, from -> to) has been matched against
+# the table and, for human-actor rows, after a matching unconsumed token has
+# been found and reserved for consumption.
 #
 # Kill switch: export QA_CYCLE_DISABLE=1 — this is a deliberate operator
 # override (an explicit opt-out someone set on purpose), not an instance of
@@ -64,35 +71,36 @@ def refuse(msg):
 
 # --- the transition table, from docs/specs/qa-cycle-state-machine.md -------
 # (from, to, actor)  actor in {"agent", "human"}
+#
+# The spec's table is exhaustive for the 9 named states and has no row whose
+# `from` is "(none)" — `observed` is the item's entry state and the spec
+# never models item *creation* as a transition. This gate still needs one
+# rule to admit the very first record of a brand-new item, so it adds a
+# single bootstrap row, ("(none)", "observed", "agent"), not present in the
+# spec's 11-row table. This is the only departure from the spec's table and
+# is documented here and in docs/handbooks/qa-cycle.md.
 TABLE = [
-    ("(none)", "intake-scoping", "agent"),
-    ("intake-scoping", "session-chartered", "agent"),
-    ("session-chartered", "session-executed", "agent"),
-    ("session-executed", "finding-triage", "agent"),
-    ("finding-triage", "finding-triage", "agent"),          # needs-info
-    ("finding-triage", "Confirmed-Defect", "human"),
-    ("finding-triage", "closed-not-a-defect", "human"),
-    ("Confirmed-Defect", "report-filed", "agent"),
-    ("report-filed", "report-filed", "human"),               # severity set / priority set
-    ("report-filed", "regression-gated", "agent"),
-    ("regression-gated", "regression-gated", "agent"),       # adopted or discarded
-    ("session-executed", "exit-readiness", "agent"),         # aggregate
-    ("exit-readiness", "go-no-go", "agent"),
-    ("go-no-go", "Go", "human"),
-    ("go-no-go", "No-Go", "human"),
-    ("No-Go", "Shipped-Under-Exception", "human"),
+    ("(none)", "observed", "agent"),  # bootstrap: first record of a new item
+    ("observed", "reproducing", "agent"),
+    ("reproducing", "reproduced", "agent"),
+    ("reproducing", "observed", "agent"),
+    ("reproducing", "parked-unreproducible", "agent"),
+    ("parked-unreproducible", "observed", "agent"),
+    ("reproduced", "handed-off", "human"),
+    ("reproduced", "not-a-defect", "human"),
+    ("reproduced", "wont-fix", "human"),
+    ("handed-off", "re-verifying", "human"),
+    ("re-verifying", "verified-fixed", "agent"),
+    ("re-verifying", "reproducing", "agent"),
 ]
 
 # Every row the spec's table marks Actor: human requires a matching
-# unconsumed verdict token — not only entry into Confirmed-Defect, Go,
-# No-Go, and Shipped-Under-Exception. Keyed by the exact (from, to) pair,
-# not by the target phase alone: `report-filed` is the target of both an
-# agent row (Confirmed-Defect -> report-filed) and a human row
-# (report-filed -> report-filed, the severity/priority-set self-loop), so a
-# target-only set would either wrongly gate the agent row or wrongly skip
-# the human one.
+# unconsumed verdict token, keyed by the exact (item id, from, to) triple —
+# not by the destination state alone. `handed-off` has exactly one legal
+# outbound row and it is a human row, so "handed-off refuses every
+# transition without a human trigger" falls directly out of table lookup;
+# the explicit assertion below is a defensive backstop, not new logic.
 ACTOR_OF = {(f, t): a for f, t, a in TABLE}
-
 ALLOWED = set(ACTOR_OF)
 
 try:
@@ -133,119 +141,226 @@ if len(parts) != 3 or parts[0] != "projects" or parts[2] != "state.md":
 slug = parts[1]
 project_dir = posixpath.join(ws_real, "projects", slug)
 state_path = posixpath.join(project_dir, "state.md")
-token_path = posixpath.join(project_dir, ".verdict-token")
+tokens_dir = posixpath.join(project_dir, "tokens")
 
-# Frontmatter is recognized ONLY as a block opened by a `---` line at the
-# very start of the content (position 0, via \A) and closed by a `---` line
-# later on. Content whose first line is not `---`, or that never closes the
-# block, has no frontmatter at all — a `phase:` line elsewhere in the body
-# must never be read as though it were inside one.
-FRONTMATTER = re.compile(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|\Z)", re.S)
-PHASE = re.compile(r"^phase:\s*(.*?)\s*(?:#.*)?$", re.M)
-
-
-def read_frontmatter(text):
-    m = FRONTMATTER.match(text)
-    return m.group(1) if m else None
-
-
-def read_phase_from_block(block):
-    """Return the single phase value declared inside a frontmatter block, or
-    None if the block has no `phase:` key, an empty value, or more than one
-    `phase:` key — all of which are refusals, never a silently-picked value."""
-    matches = PHASE.findall(block)
-    if len(matches) != 1:
-        return None
-    value = matches[0].strip()
-    if not value:
-        return None
-    return value
+# --- per-item record parsing -------------------------------------------
+# state.md holds a chain of item blocks. Each block is its own
+# `---`-delimited frontmatter-shaped document:
+#
+#   ---
+#   item: <id>
+#   state: <one of the 9 spec states>
+#   reproduction: <procedure text, once recorded>
+#   evidence: <evidence for the most recent transition>
+#   transition: <from> -> <to>
+#   ---
+#
+# Recognized ONLY as blocks opened by a `---` line at the start of a line
+# and closed by a later `---` line — never a bare `item:`/`state:` pair
+# floating outside a block.
+BLOCK_RE = re.compile(r"^---[ \t]*\r?\n(.*?)\r?\n---[ \t]*\r?\n?", re.M | re.S)
+ITEM_KEY = re.compile(r"^item:\s*(.*?)\s*(?:#.*)?$", re.M)
+STATE_KEY = re.compile(r"^state:\s*(.*?)\s*(?:#.*)?$", re.M)
 
 
-def current_phase():
-    if not os.path.exists(state_path):
+def parse_blocks(text):
+    """Return a list of raw block bodies (the text between one pair of ---
+    delimiters each). Never raises; an unparseable file yields []."""
+    return [m.group(1) for m in BLOCK_RE.finditer(text)]
+
+
+def block_item_and_state(block):
+    """Return (item_id, state) for a block, or (None, None) if the block
+    does not declare exactly one non-empty item id and exactly one
+    non-empty state — either of which is a refusal, never a guess."""
+    items = ITEM_KEY.findall(block)
+    states = STATE_KEY.findall(block)
+    if len(items) != 1 or len(states) != 1:
+        return None, None
+    item_id = items[0].strip()
+    state = states[0].strip()
+    if not item_id or not state:
+        return None, None
+    return item_id, state
+
+
+def item_state_from_text(text, item_id):
+    """Current state of item_id as recorded in text, or None if it cannot
+    be established unambiguously (item absent -> "(none)" is returned
+    instead, which is a valid, well-defined starting state, not a
+    refusal)."""
+    matches = []
+    for block in parse_blocks(text):
+        bid, bstate = block_item_and_state(block)
+        if bid == item_id:
+            matches.append(bstate)
+    if not matches:
         return "(none)"
+    if len(matches) != 1 or matches[0] is None:
+        return None
+    return matches[0]
+
+
+def current_state_text():
+    if not os.path.exists(state_path):
+        return ""
     try:
         with open(state_path, encoding="utf-8-sig") as fh:
-            text = fh.read(65536)
+            return fh.read(1 << 20)
     except (OSError, UnicodeDecodeError):
         refuse("qa-cycle: refused — %s exists but could not be read. Fix or remove it before attempting a transition." % state_path)
-    block = read_frontmatter(text)
-    if block is None:
-        refuse("qa-cycle: refused — %s has no readable YAML frontmatter (a `---`-delimited block at the very start of the file). The current phase cannot be established, so no write is permitted." % state_path)
-    phase = read_phase_from_block(block)
-    if phase is None:
-        refuse("qa-cycle: refused — %s does not declare exactly one non-empty `phase:` key inside its frontmatter. The current phase cannot be established, so no write is permitted." % state_path)
-    return phase
 
 
-def attempted_phase():
+def attempted_content():
     content = None
     if tool == "Write":
         content = tool_input.get("content")
     else:  # Edit
         content = tool_input.get("new_string")
     if not isinstance(content, str):
-        refuse("qa-cycle: refused — could not read the new content of this write, so the attempted phase cannot be determined.")
-    block = read_frontmatter(content)
-    if block is None:
-        refuse("qa-cycle: refused — the write does not declare a phase in valid frontmatter (a `---`-delimited block at the very start of the content). A `phase:` line elsewhere in the body does not count.")
-    phase = read_phase_from_block(block)
-    if phase is None:
-        refuse("qa-cycle: refused — the write does not declare a phase in valid frontmatter: its frontmatter block must contain exactly one non-empty `phase:` key.")
-    return phase
+        refuse("qa-cycle: refused — could not read the new content of this write, so the attempted item state cannot be determined.")
+    return content
 
 
-cur = current_phase()
-new = attempted_phase()
+cur_text = current_state_text()
+new_text = attempted_content()
 
-def legal_from(phase):
-    return sorted({t for f, t, _ in TABLE if f == phase})
+new_blocks = parse_blocks(new_text)
+if not new_blocks:
+    refuse("qa-cycle: refused — the write does not declare any item in valid `---`-delimited block form (each block needs its own `item:` and `state:` keys). Nothing for the gate to authorize.")
+
+# Determine which single item this write changes. Every item block present
+# in the new content must either match the item's current recorded state
+# (unchanged, fine) or be exactly the one item whose state differs (the
+# attempted transition). More than one differing item, or a block that
+# fails to parse its own item/state pair, is refused as ambiguous.
+changed = []
+for block in new_blocks:
+    item_id, new_state = block_item_and_state(block)
+    if item_id is None or new_state is None:
+        refuse("qa-cycle: refused — the write contains a block with no readable, unambiguous `item:` and `state:` pair. Refusing rather than guessing which item or state is meant.")
+    old_state = item_state_from_text(cur_text, item_id)
+    if old_state is None:
+        refuse("qa-cycle: refused — %s already holds an ambiguous record for item %s (more than one block, or an unreadable state). The current state cannot be established, so no write is permitted." % (state_path, item_id))
+    if old_state != new_state:
+        changed.append((item_id, old_state, new_state))
+
+if len(changed) == 0:
+    refuse("qa-cycle: refused — this write does not change any item's recorded state. There is no transition here for the gate to authorize.")
+if len(changed) > 1:
+    refuse("qa-cycle: refused — this write changes more than one item's state in a single operation (%s). Each transition must be its own write so the gate can authorize it individually." % ", ".join(i for i, _, _ in changed))
+
+item_id, cur, new = changed[0]
+
+
+def legal_from(state):
+    return sorted({t for f, t, _ in TABLE if f == state})
 
 
 if (cur, new) not in ALLOWED:
     legal = legal_from(cur)
     refuse(
-        "qa-cycle: refused — %s -> %s is not a transition docs/specs/qa-cycle-state-machine.md permits.\n"
-        "Current phase: %s. Transitions legal from here: %s."
-        % (cur, new, cur, ", ".join(legal) if legal else "(none)")
+        "qa-cycle: refused — item %s: %s -> %s is not a transition docs/specs/qa-cycle-state-machine.md permits.\n"
+        "Current state: %s. Transitions legal from here: %s."
+        % (item_id, cur, new, cur, ", ".join(legal) if legal else "(none)")
     )
 
-if ACTOR_OF[(cur, new)] == "human":
-    if not os.path.exists(token_path):
-        refuse(
-            "qa-cycle: refused — %s -> %s is a human-only transition and no verdict token is present at %s.\n"
-            "A person must decide this and state the verdict in their own turn (signoff mints the token from that "
-            "turn); the evidence needed is exactly what docs/specs/qa-cycle-state-machine.md requires for this "
-            "transition." % (cur, new, token_path)
-        )
-    try:
-        with open(token_path, encoding="utf-8-sig") as fh:
-            ttext = fh.read(8192)
-    except (OSError, UnicodeDecodeError):
-        refuse("qa-cycle: refused — %s could not be read. A token that cannot be verified is treated as absent." % token_path)
-    tm = re.search(r"^transition:\s*(.+?)\s*(?:#.*)?$", ttext, re.M)
-    pm = re.search(r"^project:\s*(.+?)\s*(?:#.*)?$", ttext, re.M)
-    if not tm or not pm:
-        refuse("qa-cycle: refused — %s is malformed (missing transition or project field). Treated as absent." % token_path)
-    want = "%s -> %s" % (cur, new)
-    if tm.group(1).strip() != want or pm.group(1).strip() != slug:
-        refuse(
-            "qa-cycle: refused — the token at %s authorizes a different transition or project, so it does not "
-            "cover %s for %s. Treated as absent; a fresh, matching verdict is required." % (token_path, want, slug)
-        )
-    # Consumed by the same operation that performs the transition: delete it
-    # now, before the write this permission decision is gating is allowed
-    # through.
-    try:
-        os.remove(token_path)
-    except OSError:
-        refuse("qa-cycle: refused — the verdict token at %s could not be consumed. Refusing rather than allowing a write whose token would remain reusable." % token_path)
+actor = ACTOR_OF[(cur, new)]
+
+# Defensive backstop for the spec's "handed-off refuses every transition
+# without a human trigger, without exception": the only legal outbound row
+# from handed-off is already a human row, so this can never trip in
+# practice against the table above — it exists so a future table edit that
+# quietly added an agent-actor row out of handed-off would still be caught.
+if cur == "handed-off" and actor != "human":
+    refuse("qa-cycle: refused — item %s is handed-off; no transition out of handed-off is permitted without a human trigger, without exception." % item_id)
+
+if actor == "human":
+    token_path = posixpath.join(tokens_dir, "%s.token" % item_id)
+    consuming_path = posixpath.join(tokens_dir, "%s.consuming" % item_id)
+
+    def read_token_file(path):
+        try:
+            with open(path, encoding="utf-8-sig") as fh:
+                ttext = fh.read(8192)
+        except (OSError, UnicodeDecodeError):
+            return None
+        im = re.search(r"^item:\s*(.+?)\s*(?:#.*)?$", ttext, re.M)
+        tm = re.search(r"^transition:\s*(.+?)\s*(?:#.*)?$", ttext, re.M)
+        if not im or not tm:
+            return None
+        return im.group(1).strip(), tm.group(1).strip(), ttext
+
+    want_item = item_id
+    want_transition = "%s -> %s" % (cur, new)
+
+    # --- finalize any stale consuming marker for this item first ---------
+    # A marker left over from a previous allow is finalized (deleted) once
+    # its recorded destination state is actually the item's current
+    # recorded state — i.e. the write it authorized landed. This is safe to
+    # do unconditionally: a marker whose `to` doesn't match the current
+    # state simply means that write never landed yet, and is left alone
+    # below so it can still authorize a retry of the exact same transition.
+    consuming = read_token_file(consuming_path)
+    reused_marker = False
+    if consuming is not None:
+        c_item, c_transition, _ = consuming
+        cm = re.match(r"^(.*?)\s*->\s*(.*)$", c_transition)
+        c_to = cm.group(2).strip() if cm else None
+        if c_item == item_id and c_to == cur:
+            # The transition that marker authorized already landed (current
+            # state now equals its `to`) — that marker's job is done.
+            try:
+                os.remove(consuming_path)
+            except OSError:
+                pass
+            consuming = None
+
+    if consuming is not None:
+        c_item, c_transition, _ = consuming
+        if c_item == want_item and c_transition == want_transition:
+            # The write this marker authorized never landed (current state
+            # is still `cur`, this marker's `from`). This is a legitimate
+            # retry of the exact same human-authorized transition — allow
+            # again without requiring a fresh human verdict, and leave the
+            # marker in place for the next gate call to finalize or reuse.
+            reused_marker = True
+
+    if not reused_marker:
+        token = read_token_file(token_path)
+        if token is None:
+            refuse(
+                "qa-cycle: refused — item %s: %s -> %s is a human-only transition and no verdict token is present at %s.\n"
+                "A person must decide this and state the verdict in their own turn (signoff mints the token from that "
+                "turn); the evidence needed is exactly what docs/specs/qa-cycle-state-machine.md requires for this "
+                "transition." % (item_id, cur, new, token_path)
+            )
+        t_item, t_transition, ttext = token
+        if t_item != want_item or t_transition != want_transition:
+            refuse(
+                "qa-cycle: refused — the token at %s authorizes a different item or transition, so it does not "
+                "cover %s for item %s. Treated as absent; a fresh, matching verdict is required." % (token_path, want_transition, item_id)
+            )
+        # Reserve the token for consumption: move it out of the live token
+        # slot into a "consuming" marker rather than deleting it outright.
+        # This decouples "decided to allow" from "irrevocably spent" so a
+        # write that fails or is aborted after this decision leaves the
+        # transition retryable (see docs/decisions/2026-07-31-token-consumption-ordering.md).
+        # If the underlying write never lands, the marker itself later
+        # re-authorizes the identical retry above; once it lands, the next
+        # gate call's finalization step above deletes the marker for good.
+        try:
+            os.makedirs(tokens_dir, exist_ok=True)
+            with open(consuming_path, "w", encoding="utf-8") as fh:
+                fh.write(ttext)
+            os.remove(token_path)
+        except OSError:
+            refuse("qa-cycle: refused — the verdict token at %s could not be reserved for consumption. Refusing rather than allowing a write whose token would remain reusable." % token_path)
 
 print(json.dumps({"hookSpecificOutput": {
     "hookEventName": "PreToolUse",
     "permissionDecision": "allow",
-    "permissionDecisionReason": "qa-cycle: %s -> %s is a transition the spec permits from the current phase." % (cur, new),
+    "permissionDecisionReason": "qa-cycle: item %s: %s -> %s is a transition the spec permits from its current state." % (item_id, cur, new),
 }}))
 sys.exit(0)
 PY
