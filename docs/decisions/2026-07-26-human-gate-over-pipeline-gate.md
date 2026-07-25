@@ -5,7 +5,7 @@ status: decided
 
 # Human gate over pipeline gate
 
-**Chosen:** a named human holds the ship/no-ship verdict and the is-this-a-defect verdict. No transition into `Go` or `Confirmed-Defect` may be taken by an agent alone.
+**Chosen:** a named human holds the ship/no-ship verdict and the is-this-a-defect verdict. No transition into `Go`, `No-Go`, `Shipped-Under-Exception`, or `Confirmed-Defect` may be taken by an agent alone.
 
 **Over:** encoding the same criteria (pass rate, coverage threshold, perf benchmark) as automated pipeline gates and letting any change through once the pipeline is green — the MinimumCD "QA Sign-Off as a Release Gate" anti-pattern position (`docs/reports/research/2026-07-25-qa-practice-landscape.md`, "Human gates in a real QA workflow" § Contested).
 

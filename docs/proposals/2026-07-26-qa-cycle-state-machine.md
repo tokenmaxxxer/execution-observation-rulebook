@@ -37,3 +37,7 @@ Hooks, commands, plugin manifests, the installer, benchmarks. Any edit to plugin
 ## How I will know it worked
 
 A reader can take the transition table alone and say, for any given transition, what must be true to take it, what evidence proves it, and whether an agent may take it without a human — with no return to the research report.
+
+## What did not work
+
+- The decision record was written naming verdict states (`Go`, `Confirmed-Defect`) that the spec's transition table never defined, so the binding clause pointed at nothing — caught by the pre-landing hunt, fixed by promoting the verdicts to first-class states.
