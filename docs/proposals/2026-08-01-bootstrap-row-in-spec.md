@@ -30,3 +30,7 @@ files:
 ## How we'll know it worked
 
 The transition table in docs/specs/qa-cycle-state-machine.md has 12 rows, the bootstrap row's (trigger, evidence, actor) matches the gate's TABLE entry verbatim, and a decision record exists stating item creation is agent-actor with its one-sentence reasoning.
+
+## What did not work
+
+The spec change made docs/handbooks/qa-cycle.md's row-count claim ("11-row table, since the spec does not model item creation as a transition") false, and the first pass did not carry the handbook along — a before-landing warrant hunt caught the two documents disagreeing, fixed in this same PR.

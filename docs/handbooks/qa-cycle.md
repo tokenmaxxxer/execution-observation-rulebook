@@ -205,9 +205,10 @@ enforce."
    restriction" and never falls through to allow. An item absent from
    `state.md` altogether resolves to the well-defined starting state
    `(none)`, from which only the bootstrap transition into `observed` (item
-   creation) is legal — this single row is an addition beyond the spec's
-   11-row table, since the spec does not model item creation as a
-   transition.
+   creation) is legal — this row is part of the spec's own transition
+   table, with `agent` as its actor, not an addition beyond it. Row count
+   and table shape are not restated here; see the spec's transition table,
+   which it describes as exhaustive.
 3. Looks up the item's current state in the transition table in
    [`docs/specs/qa-cycle-state-machine.md`](../specs/qa-cycle-state-machine.md)
    and checks whether the attempted `from -> to` write is one the table
