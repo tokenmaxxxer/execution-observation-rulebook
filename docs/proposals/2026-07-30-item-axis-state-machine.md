@@ -48,4 +48,5 @@ The rewritten spec is reviewable against every constraint above: an item's state
 ## What did not work
 
 - The frozen contract does not name which plugin owns each item-axis transition; the ownership map had to be inferred from the old spec's map and each plugin's existing directive prose rather than being handed down. Flagged as an inference, not a verbatim carryover.
+- `bugreport/hooks/directive.sh`'s old `closed-not-a-defect` bullet conflated "not reproducible" (WorksForMe/Invalid) with "reproduced but not a defect" (Invalid/WontFix judgment). The new vocabulary splits these across `parked-unreproducible` (testrun-owned) and `not-a-defect`/`wont-fix` (bugreport-owned, human-locked). Reworded the bullet to only cover the latter and pointed the former at `parked-unreproducible`.
 

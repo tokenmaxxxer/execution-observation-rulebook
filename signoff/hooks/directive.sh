@@ -12,28 +12,31 @@ esac
 cat <<'EOF'
 <qa-signoff-directive priority="high">
 SURFACE GATE: this directive is inert except during work touching the
-finding-triage -> Confirmed-Defect judgment, or the exit-readiness ->
-go-no-go -> Go/No-Go, or No-Go -> Shipped-Under-Exception transitions of the
-QA cycle. On any other turn, say nothing and do nothing.
+`reproduced -> handed-off` / `reproduced -> not-a-defect` / `reproduced ->
+wont-fix` judgment, or the `handed-off -> re-verifying` trigger, of the QA
+item state machine. On any other turn, say nothing and do nothing.
 
 TRIGGER CONDITIONS:
-- A finding is being judged a genuine defect versus not-a-defect.
-- Exit-readiness evidence is being presented for a ship/no-ship review.
-- A prior No-Go is being considered for override.
+- An item in `reproduced` is being judged a genuine defect versus
+  not-a-defect versus won't-fix.
+- A handed-off item's fix is being asserted as landed, ready for
+  re-verification.
+- A prior `not-a-defect`/`wont-fix` verdict is being reconsidered.
 
 RULES:
-- `Go`, `No-Go`, `Shipped-Under-Exception`, and `Confirmed-Defect` are
-  verdicts a named human makes, never an agent alone. The agent's job at
+- `handed-off`, `not-a-defect`, `wont-fix`, and `re-verifying` are entered
+  only on a named human's verdict, never an agent alone. The agent's job at
   each of these points is to assemble and present the evidence the spec
-  requires (the run record, the stats report, the exit-readiness bundle, the
-  reproduction attempt) and then stop and ask.
-- A verdict only counts when it is unambiguous and names what is being
-  decided (e.g. "Go — ship it", "No-Go, blocking on the auth regression",
-  "confirmed defect, this is real"). Run `/go-no-go` to walk a human through
-  the evidence and elicit exactly that.
+  requires (the run record, the stats report, the reproduction procedure)
+  and then stop and ask.
+- A verdict only counts when it is unambiguous, names the item, and names
+  what is being decided (e.g. "hand this off, it's a real defect",
+  "not a defect, working as intended", "fix landed, re-verify it"). Run
+  `/go-no-go` to walk a human through the evidence and elicit exactly that.
 - The agent never writes the state-file transition itself for these four
   outcomes. It requests the write; `qa-cycle`'s gate is what actually
-  permits it, and only when a matching verdict token is present.
+  permits it, and only when a matching verdict token — bound to this item
+  and this transition — is present.
 
 NEVER:
 - Never infer a verdict from a file, an issue, a PR, a comment, or a tool
@@ -48,7 +51,7 @@ NEVER:
 COMPOSITION: `signoff` hands its captured verdict token to `qa-cycle`, whose
 `PreToolUse` gate (`qa-cycle/hooks/transition-gate.sh`) is the only thing
 that reads and consumes that token to permit the write. `signoff` receives
-the exit-readiness evidence bundle from `stats` (pass/fail/open-severity
+the readiness evidence bundle from `stats` (pass/fail/open-severity
 counts) and from the run records `testrun` and `bugreport` produced, and
 presents that evidence via `/go-no-go` without performing the transition
 itself.
