@@ -27,6 +27,18 @@
 # Exit 0: no hard failures. Exit 1: at least one hard failure, named.
 set -euo pipefail
 
+# This script needs bash 4+ for its associative arrays. macOS ships bash
+# 3.2.57 — the last GPLv2 release — as /bin/bash, where `declare -A` is not
+# an option and the resulting "declare: -A: invalid option" reads like a bug
+# in this script rather than a missing interpreter. Exit 3, distinct from the
+# 2 this script uses for "drift found", so a caller can tell DID NOT RUN from
+# RAN AND FAILED — the two are not the same verdict.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+  echo "directive-drift-check: needs bash 4+ (associative arrays); this is bash ${BASH_VERSION}." >&2
+  echo "  macOS's /bin/bash is 3.2. Install a newer bash (e.g. brew install bash) and run this script with it." >&2
+  exit 3
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GATE="${SCRIPT_DIR}/../transition-gate.sh"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
