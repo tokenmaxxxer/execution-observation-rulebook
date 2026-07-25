@@ -1,5 +1,5 @@
 ---
-status: approved
+status: landed
 files:
   - docs/specs/qa-cycle-state-machine.md
   - docs/decisions/2026-08-01-item-creation-is-agent-actor.md
