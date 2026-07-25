@@ -109,6 +109,39 @@ plus folder trust), commit this to that repo's `.claude/settings.json`:
 }
 ```
 
+## Handoff protocol
+
+Excerpted from the shared `docs/specs/role-handoff-contract.md` (root
+`tokenmaxxxer` repo) at `2affe5db7dfb285abaa2860d3004edb3f97c9aec` — qa's
+rows only. `qa-cycle/hooks/transition-gate.sh` refuses to proceed when this
+pinned SHA no longer matches that file's current SHA in the target repo.
+
+**ACCEPTS.** None. qa works from direct observation of the running system,
+not from other roles' records. It uniformly refuses `hypothesis`,
+`build-proposal`, `feasibility-record`, `review-record`, and `ops-state` if
+any is handed over as if it were required input.
+
+**WHERE UPSTREAM LIVES.** Not applicable — qa accepts no upstream kind, so
+there is no pointer for it to resolve.
+
+**PRODUCES.**
+
+| kind | path | required fields beyond common header |
+|---|---|---|
+| `qa-state` | `docs/reports/records/<subject>/qa.md` (in-repo pointer) | role status (`observed,reproducing,reproduced,handed-off,re-verifying,verified-fixed,not-a-defect,wont-fix`), `path:` pointer into `$QA_WORKSPACE`, plus the common header including `handoff_status` |
+| `qa-evidence` | `$QA_WORKSPACE/projects/<owner>-<repo>/**` (out-of-repo, section 6 exception) | intake profile, bug reports, regression records, run stats — as defined by this rulebook's own templates |
+
+**STOPS.**
+
+- Upstream stale at role entry: applies only if qa is ever handed a pointer
+  despite accepting nothing — the check still exists as a backstop.
+- An existing record already at a path qa does not own under
+  `docs/reports/records/`: refuse and report the conflict — path and whose
+  territory it falls in — never overwrite or merge into it silently.
+- Input carrying `handoff_status: provisional` that qa is not permitted to
+  consume as final: moot in the common case since qa accepts no kind, but
+  stated for the edge case of a stray handoff.
+
 ## Kill switches
 
 `QA_INTAKE_OFF=1`, `QA_TESTRUN_OFF=1`, `QA_BUGREPORT_OFF=1` — each disables

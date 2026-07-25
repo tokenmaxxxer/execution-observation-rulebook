@@ -38,6 +38,29 @@ esac
 
 command -v python3 >/dev/null 2>&1 || { echo "qa-cycle: python3 not found; refusing rather than allowing an unchecked write." >&2; exit 2; }
 
+# --- role-handoff-contract SHA pin -----------------------------------------
+# README.md's "Handoff protocol" section excerpts docs/specs/role-handoff-
+# contract.md (root tokenmaxxxer repo) at a pinned SHA. This applies the
+# contract's own staleness mechanism (its section 4) to the contract itself:
+# if the contract has moved since the excerpt was written, the excerpt may
+# no longer say what the contract says, so this gate refuses rather than
+# adjudicating against a possibly-stale copy. Only checked when the target
+# repo actually has that file under version control; a repo with no such
+# path (or no git repo at all) has nothing to be stale against, so this
+# check is silently not-applicable there, the same as every other
+# not-applicable path in this gate.
+PINNED_CONTRACT_SHA="2affe5db7dfb285abaa2860d3004edb3f97c9aec"
+if command -v git >/dev/null 2>&1 && git rev-parse --show-toplevel >/dev/null 2>&1; then
+  _contract_repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  if [ -n "$_contract_repo_root" ] && [ -f "$_contract_repo_root/docs/specs/role-handoff-contract.md" ]; then
+    _current_contract_sha="$(git -C "$_contract_repo_root" log -1 --format=%H -- docs/specs/role-handoff-contract.md 2>/dev/null || true)"
+    if [ -n "$_current_contract_sha" ] && [ "$_current_contract_sha" != "$PINNED_CONTRACT_SHA" ]; then
+      echo "qa-cycle: refused — README.md's Handoff protocol section is pinned to docs/specs/role-handoff-contract.md at $PINNED_CONTRACT_SHA, but that file is now at $_current_contract_sha. Refusing rather than adjudicating against a possibly-stale excerpt of the shared contract. Re-excerpt README.md's Handoff protocol section against the current contract and update the pinned SHA before proceeding." >&2
+      exit 2
+    fi
+  fi
+fi
+
 # --dump-facts is a read-only introspection path: it prints the same
 # TABLE/FIELDS structures the decision logic below branches on, as JSON,
 # and exits 0. It touches no state file, no token, no QA_WORKSPACE, and
