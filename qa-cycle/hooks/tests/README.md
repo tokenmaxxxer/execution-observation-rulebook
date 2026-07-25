@@ -59,6 +59,26 @@ it creates is removed on exit, including on failure — nothing is left under
     *different* transition attempted on the same item with no fresh token
     is refused — proving the reserved marker does not leak into
     authorizing a second, different transition.
+16. Path-traversing item id — the exact reproduction recorded in
+    `docs/reports/2026-07-31-hunt-item-axis-enforcement.md`: an item id of
+    `../../../../../../../../tmp/evil-item` with a forged "token" planted
+    at the resulting attacker-chosen path outside `tokens/` — expect
+    refuse. The item id allow-list rejects the value before it is ever
+    used to build `token_path`, so the forged file is never opened.
+17. Item id with a leading hyphen — outside the allow-list (may not begin
+    with a hyphen) — expect refuse.
+18. Item id containing a character outside the allow-list (a slash) —
+    expect refuse.
+19. Over-length item id (65 characters, one past the 64-character limit)
+    — expect refuse.
+20. Project identifier containing a character outside the allow-list (a
+    semicolon), in a slug that is itself a real, single path component
+    under `projects/` so it passes the earlier workspace-realpath
+    containment check — expect refuse. (A literal `..` traversal in the
+    project segment of `file_path` is caught earlier still, by the
+    existing workspace-containment check on the resolved real path, before
+    a project slug is ever extracted — this case tests the
+    defense-in-depth allow-list on top of that.)
 
 ## What this does not cover
 

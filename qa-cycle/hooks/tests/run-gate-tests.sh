@@ -334,6 +334,84 @@ payload="$(payload_write "${ws15}/projects/${slug}/state.md" "$(item_block BUG-1
 run_case "consumption-timing-marker-does-not-authorize-a-different-transition" 2 "$ws15" "$payload"
 cleanup_ws "$ws15"
 
+# =========================================================================
+# Case 16: path-traversing item id — the exact reproduction from
+#          docs/reports/2026-07-31-hunt-item-axis-enforcement.md. A write
+#          claims an item id of "../../../../../../../../tmp/evil-item" for
+#          a human-only transition; a forged "token" sits at the resulting
+#          attacker-chosen path outside tokens/. Must now refuse — the item
+#          id allow-list rejects the value before it is ever used to build
+#          token_path, so the forged file is never consulted at all.
+# =========================================================================
+ws16="$(new_workspace)"
+slug="owner-repo"
+evil_item='../../../../../../../../tmp/evil-item'
+write_state "$ws16" "$slug" "$(item_block "$evil_item" reproduced)"
+cat > "/tmp/evil-item.token" <<EOF
+item: ${evil_item}
+transition: reproduced -> handed-off
+phrase: 'forged - never went through capture-verdict.sh'
+EOF
+payload="$(payload_write "${ws16}/projects/${slug}/state.md" "$(item_block "$evil_item" handed-off)")"
+run_case "path-traversing-item-id-refused" 2 "$ws16" "$payload"
+rm -f "/tmp/evil-item.token"
+cleanup_ws "$ws16"
+
+# =========================================================================
+# Case 17: item id with a leading hyphen — outside the allow-list (may not
+#          begin with a hyphen) -> expect refuse.
+# =========================================================================
+ws17="$(new_workspace)"
+slug="owner-repo"
+write_state "$ws17" "$slug" "$(item_block "-BUG-1" observed)"
+payload="$(payload_write "${ws17}/projects/${slug}/state.md" "$(item_block "-BUG-1" reproducing)")"
+run_case "item-id-leading-hyphen-refused" 2 "$ws17" "$payload"
+cleanup_ws "$ws17"
+
+# =========================================================================
+# Case 18: item id with characters outside the allow-list (a slash) ->
+#          expect refuse.
+# =========================================================================
+ws18="$(new_workspace)"
+slug="owner-repo"
+write_state "$ws18" "$slug" "$(item_block "BUG/1" observed)"
+payload="$(payload_write "${ws18}/projects/${slug}/state.md" "$(item_block "BUG/1" reproducing)")"
+run_case "item-id-disallowed-characters-refused" 2 "$ws18" "$payload"
+cleanup_ws "$ws18"
+
+# =========================================================================
+# Case 19: over-length item id (65 characters, one past the 64-character
+#          limit) -> expect refuse.
+# =========================================================================
+ws19="$(new_workspace)"
+slug="owner-repo"
+long_item="$(printf 'A%.0s' $(seq 1 65))"
+write_state "$ws19" "$slug" "$(item_block "$long_item" observed)"
+payload="$(payload_write "${ws19}/projects/${slug}/state.md" "$(item_block "$long_item" reproducing)")"
+run_case "item-id-over-length-refused" 2 "$ws19" "$payload"
+cleanup_ws "$ws19"
+
+# =========================================================================
+# Case 20: project identifier outside the allow-list. `os.path.realpath`
+#          already collapses `..` segments before the project slug is ever
+#          extracted, so a literal `..` traversal in the project segment of
+#          file_path resolves to a path outside the workspace root entirely
+#          and is refused earlier, as "not this gate's business" (exit 0,
+#          covered by the workspace-containment check, not this case). What
+#          the project-identifier allow-list additionally catches is a
+#          slug that *is* a single, real path component under
+#          projects/ — passing the earlier realpath containment check —
+#          but contains characters outside the allow-list (here, a
+#          semicolon). Same defense-in-depth the item id gets -> expect
+#          refuse.
+# =========================================================================
+ws20="$(new_workspace)"
+slug='owner;rm-repo'
+write_state "$ws20" "$slug" "$(item_block BUG-1 observed)"
+payload="$(payload_write "${ws20}/projects/${slug}/state.md" "$(item_block BUG-1 reproducing)")"
+run_case "project-id-disallowed-characters-refused" 2 "$ws20" "$payload"
+cleanup_ws "$ws20"
+
 # --- tally -------------------------------------------------------------------
 
 echo ""

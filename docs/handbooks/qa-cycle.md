@@ -55,6 +55,42 @@ unchanged, or that changes more than one item's state at once, is refused
 as having no transition (or an ambiguous one) for the gate to authorize —
 each transition is its own write.
 
+## Item id and project identifier shape
+
+Both `transition-gate.sh` and `signoff`'s verdict-capture hook read an item
+id and a project identifier (`<owner>-<repo>`) out of untrusted input — the
+`item:` field of a write's proposed `state.md` content, and the prompt text
+of a human turn, respectively — and both values get used to build
+filesystem paths (the token file, the state file, the project directory).
+An unvalidated value here is a path-traversal escape: see
+[`docs/reports/2026-07-31-hunt-item-axis-enforcement.md`](../reports/2026-07-31-hunt-item-axis-enforcement.md)
+for the reproduction where an item id of
+`../../../../../../../../tmp/evil-item` made the gate accept a verdict
+token the agent forged itself, at a path of its own choosing, bypassing
+`capture-verdict.sh` entirely.
+
+Both hooks now apply two independent checks, in this order, before either
+value is used in any path or any comparison:
+
+1. **Allow-list.** An item id is ASCII letters, digits, hyphen, and
+   underscore only, length 1..64, and may not begin with a hyphen. A
+   project identifier follows the same charset, length 1..128. Anything
+   outside this shape is not a valid id — it is rejected by pattern, never
+   repaired or stripped down to something that fits.
+2. **Resolve, then contain.** Independently of the allow-list, every path
+   built from one of these values (the token file, the consuming marker,
+   the project directory, the state file) is resolved to its real,
+   absolute path and prefix-checked against the intended root — the
+   workspace root for the project directory, the item's `tokens/`
+   directory for token paths — before it is opened. The check runs after
+   resolution, never before: a containment check against an unresolved
+   path proves nothing.
+
+Either check failing is a refusal: `transition-gate.sh` exits 2 without
+echoing the offending value into its message; `capture-verdict.sh` (which
+never blocks, per its own design) mints no token and exits 0. Neither hook
+falls through to an allow/mint path on an invalid id.
+
 ## The verdict token
 
 Path: `<QA_WORKSPACE>/projects/<owner>-<repo>/tokens/<item-id>.token`, one
@@ -160,9 +196,12 @@ enforce."
 2. Reads every item's current `state` from the project's `state.md` and
    determines which single item the attempted write changes (comparing
    every item block in the new content against that item's currently
-   recorded state). If the file is missing, unreadable, has malformed
-   frontmatter, changes zero items, or changes more than one item, the gate
-   refuses — an unreadable/absent/ambiguous state is never treated as "no
+   recorded state). Each block's `item:` value is checked against the item
+   id allow-list ("Item id and project identifier shape" above) at the
+   moment it is parsed out of the block — a value outside that allow-list
+   makes the block unparseable, the same as a missing `item:`/`state:`
+   pair. If the file is missing, unreadable, has malformed frontmatter,
+   changes zero items, or changes more than one item, the gate refuses — an unreadable/absent/ambiguous state is never treated as "no
    restriction" and never falls through to allow. An item absent from
    `state.md` altogether resolves to the well-defined starting state
    `(none)`, from which only the bootstrap transition into `observed` (item

@@ -71,3 +71,76 @@ against the still-`reproduced` item also exits `0` (previously this
 retry exited `2`, the defect); a subsequent different transition attempted
 on the same item after the marker's authorized write actually lands exits
 `2`, confirming the marker does not outlive the transition it authorized.
+
+## Revision — item id / path containment fix
+
+A before-landing warrant hunt on this same unit
+(`docs/reports/2026-07-31-hunt-item-axis-enforcement.md`, "before-landing —
+stance 0") found that `transition-gate.sh` built `token_path`/
+`consuming_path` from the unvalidated `item:` field with no normalization
+and no containment check. An agent could write `item:
+../../../../../../../../tmp/evil-item`, plant a self-forged "token" file at
+that attacker-chosen path, and the gate would accept it as authorization for
+the human-only `reproduced -> handed-off` transition — `capture-verdict.sh`
+never ran. This revision closes that bypass in both hooks per
+`docs/handbooks/qa-cycle.md` "Item id and project identifier shape": an
+allow-list check on the item id and project identifier at the point each is
+read, plus an independent resolve-then-contain check on every path built
+from either value.
+
+### What was run
+
+```sh
+qa-cycle/hooks/tests/run-gate-tests.sh
+```
+
+extended from 19 to 24 cases (cases 16–20: the hunt's exact
+path-traversal reproduction, a leading-hyphen item id, an item id with a
+disallowed character, an over-length item id, and a project identifier
+with a disallowed character).
+
+### What came back
+
+```
+case: path-traversing-item-id-refused | expected: 2 | observed: 2 | ok
+case: item-id-leading-hyphen-refused | expected: 2 | observed: 2 | ok
+case: item-id-disallowed-characters-refused | expected: 2 | observed: 2 | ok
+case: item-id-over-length-refused | expected: 2 | observed: 2 | ok
+case: project-id-disallowed-characters-refused | expected: 2 | observed: 2 | ok
+
+=== tally: 24 passed, 0 failed (of 24 cases) ===
+```
+
+Harness process exit code: `0`. First run of the extended harness failed 16
+of 19 pre-existing cases with exit `1` (a `NameError: name 'PROJECT_ID_RE'
+is not defined` — the allow-list regexes were defined after their first use
+in the gate's Python). Fixed by moving the `ITEM_ID_RE`/`PROJECT_ID_RE`
+definitions above their use; re-run passed all 24/24.
+
+### Hunt reproduction, replayed directly against the fixed gate
+
+```sh
+rm -rf /tmp/ws && mkdir -p /tmp/ws/projects/proj/tokens
+ITEM='../../../../../../../../tmp/evil-item'
+# ... (state.md write, forged /tmp/evil-item.token, payload as in the hunt record)
+QA_WORKSPACE=/tmp/ws bash qa-cycle/hooks/transition-gate.sh < /tmp/payload.json
+```
+
+Observed:
+
+```
+qa-cycle: refused — the write contains a block with no readable, unambiguous `item:` and `state:` pair. Refusing rather than guessing which item or state is meant.
+exit=2
+```
+
+Previously (before this revision): `permissionDecision: allow`, exit `0` —
+the bypass. Now: refused, exit `2`, and the message does not echo the
+attempted item id.
+
+`signoff/hooks/capture-verdict.sh` was spot-checked the same way: a
+legitimate `item BUG-1 confirmed defect, hand it off` turn still mints
+`tokens/BUG-1.token` (exit `0`); a forged `item
+../../../../tmp/evil confirmed defect, hand it off` turn and a leading-hyphen
+`item -BUG1 ...` turn both mint no token file anywhere (exit `0`, per this
+hook's never-blocks design — "refusal" here means no mint, not a non-zero
+exit).

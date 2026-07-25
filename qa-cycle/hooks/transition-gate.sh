@@ -139,9 +139,42 @@ parts = rel.split("/")
 if len(parts) != 3 or parts[0] != "projects" or parts[2] != "state.md":
     not_applicable()
 slug = parts[1]
+
+# An item id is validated by allow-list, at the point it is read, before it
+# is used in any path or any comparison: ASCII letters, digits, hyphen, and
+# underscore only, length 1..64, never starting with a hyphen. Anything
+# outside this shape is not an item id — rejected by pattern, never
+# sanitized. This is what stops a value like
+# "../../../../../../../../tmp/evil-item" from ever becoming an item_id in
+# the first place, closing the path-traversal bypass of the human-only gate
+# recorded in docs/reports/2026-07-31-hunt-item-axis-enforcement.md.
+ITEM_ID_RE = re.compile(r"^(?!-)[A-Za-z0-9_-]{1,64}$")
+
+# Same allow-list discipline for the project identifier (<owner>-<repo>),
+# which comes from the same untrusted surface (the write's file_path) and
+# has the same escape if trusted blindly.
+PROJECT_ID_RE = re.compile(r"^(?!-)[A-Za-z0-9_-]{1,128}$")
+
+# The project identifier comes from the same untrusted surface (the
+# write's file_path) as the item id and gets the same two checks: an
+# allow-list at the point it is read, before it is used in any path, and —
+# independently — the path built from it is resolved to a real path and
+# containment-checked against the workspace root before use.
+if not PROJECT_ID_RE.match(slug):
+    refuse("qa-cycle: refused — the project path in this write is not a recognized project identifier. Refusing rather than trusting an unvalidated value in a path.")
+
 project_dir = posixpath.join(ws_real, "projects", slug)
 state_path = posixpath.join(project_dir, "state.md")
 tokens_dir = posixpath.join(project_dir, "tokens")
+
+# Resolve first, then check containment — a check performed before
+# resolution proves nothing. Belt-and-braces on top of the allow-list
+# above: even though slug was built from an already-resolved, already
+# contained path_real, re-resolve and re-check the path actually used from
+# here on.
+project_dir_real = posixpath.normpath(os.path.realpath(project_dir).replace("\\", "/"))
+if not (project_dir_real == ws_real or project_dir_real.startswith(ws_real + "/")):
+    refuse("qa-cycle: refused — the resolved project directory for this write escapes the workspace root. Refusing rather than reading or writing outside it.")
 
 # --- per-item record parsing -------------------------------------------
 # state.md holds a chain of item blocks. Each block is its own
@@ -180,6 +213,13 @@ def block_item_and_state(block):
     item_id = items[0].strip()
     state = states[0].strip()
     if not item_id or not state:
+        return None, None
+    # Validated here, at the point the id is read out of the block, before
+    # it is used in any comparison or path anywhere downstream. A value
+    # that fails the allow-list is not an item id at all: treat the block
+    # as unparseable, the same as a missing item:/state: pair, rather than
+    # trying to strip or repair it.
+    if not ITEM_ID_RE.match(item_id):
         return None, None
     return item_id, state
 
@@ -276,8 +316,19 @@ if cur == "handed-off" and actor != "human":
     refuse("qa-cycle: refused — item %s is handed-off; no transition out of handed-off is permitted without a human trigger, without exception." % item_id)
 
 if actor == "human":
+    # item_id was already validated by allow-list where it was parsed out
+    # of the state.md block (block_item_and_state), before it was ever
+    # used in a comparison. Independently of that, the paths built from it
+    # here are resolved to real paths and containment-checked against
+    # tokens_dir before they are opened — resolve first, then check.
     token_path = posixpath.join(tokens_dir, "%s.token" % item_id)
     consuming_path = posixpath.join(tokens_dir, "%s.consuming" % item_id)
+
+    tokens_dir_real = posixpath.normpath(os.path.realpath(tokens_dir).replace("\\", "/"))
+    for _p in (token_path, consuming_path):
+        _p_real = posixpath.normpath(os.path.realpath(_p).replace("\\", "/"))
+        if not (_p_real == tokens_dir_real or _p_real.startswith(tokens_dir_real + "/")):
+            refuse("qa-cycle: refused — a token path for this transition resolves outside the item's tokens directory. Refusing rather than reading or writing a token file outside it.")
 
     def read_token_file(path):
         try:

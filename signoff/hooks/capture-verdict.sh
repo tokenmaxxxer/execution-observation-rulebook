@@ -42,22 +42,50 @@ prompt="$(echo "$payload" | jq -r '.prompt // empty' 2>/dev/null || true)"
 slug=$(git remote get-url origin 2>/dev/null | sed -e 's#\.git/*$##' -e 's#/*$##' -e 's#.*[:/]\([^/]*\)/\([^/]*\)$#\1-\2#')
 [ -n "$slug" ] || slug=$(basename "$PWD")
 
+# The project identifier is validated at the point it is read, by
+# allow-list, before it is used in any path: ASCII letters, digits,
+# hyphen, underscore only, length 1..128, never starting with a hyphen.
+# Reject by pattern, never by stripping/sanitizing a bad value.
+case "$slug" in
+  -*) exit 0 ;;
+esac
+printf '%s' "$slug" | grep -qE '^[A-Za-z0-9_-]{1,128}$' || exit 0
+
 proj_dir="$ws/projects/$slug"
-# Prefix-check: never trust a path built from a runtime value without
-# resolving and confirming it stays inside the workspace root.
-case "$proj_dir" in
+# Independently of the allow-list above: resolve the path built from the
+# project identifier to a real path, then containment-check it against the
+# workspace root — resolve first, then check; a check before resolution
+# proves nothing. (The directory must already exist for this hook to have
+# anything to do, so resolving it here is safe.)
+proj_dir_real="$(cd "$proj_dir" 2>/dev/null && pwd -P)" || exit 0
+case "$proj_dir_real" in
+  "$ws") ;;
   "$ws"/*) ;;
   *) exit 0 ;;
 esac
+proj_dir="$proj_dir_real"
 state_file="$proj_dir/state.md"
 [ -f "$state_file" ] || exit 0
 
 # --- identify the item this turn concerns ------------------------------
-# Required, explicit form: "item <id>" (case-insensitive), id = word
-# characters, dots, dashes, underscores. No item id, no mint — this hook
-# never guesses which item a bare "confirmed defect" refers to.
-item_id="$(echo "$prompt" | grep -ioE '\bitem[[:space:]]+[A-Za-z0-9][A-Za-z0-9._-]*' | head -1 | sed -E 's/^[Ii][Tt][Ee][Mm][[:space:]]+//')"
-[ -n "$item_id" ] || exit 0
+# Required, explicit form: "item <id>" (case-insensitive). No item id, no
+# mint — this hook never guesses which item a bare "confirmed defect"
+# refers to.
+raw_item="$(echo "$prompt" | grep -ioE '\bitem[[:space:]]+[A-Za-z0-9_-]+' | head -1 | sed -E 's/^[Ii][Tt][Ee][Mm][[:space:]]+//')"
+[ -n "$raw_item" ] || exit 0
+
+# The item id is validated at the point it is read, by allow-list, before
+# it is used in any path or any comparison — the same discipline as
+# transition-gate.sh applies when it reads item ids out of state.md: ASCII
+# letters, digits, hyphen, underscore only, length 1..64, never starting
+# with a hyphen. Reject by pattern; never try to sanitize a bad value.
+# This is what stops a forged "item ../../../../tmp/evil-item" turn from
+# ever producing a token file outside tokens/.
+case "$raw_item" in
+  -*) exit 0 ;;
+esac
+printf '%s' "$raw_item" | grep -qE '^[A-Za-z0-9_-]{1,64}$' || exit 0
+item_id="$raw_item"
 
 # Current state of that item, read the same way the gate reads it: the
 # single `state:` key inside the one block whose `item:` key matches.
@@ -139,6 +167,19 @@ transition="$phase -> $to"
 tokens_dir="$proj_dir/tokens"
 mkdir -p "$tokens_dir"
 token_file="$tokens_dir/${item_id}.token"
+
+# Belt-and-braces on top of the item id allow-list above: resolve the
+# tokens directory to a real path and confirm the token file we're about
+# to write actually resolves under it before writing anything.
+tokens_dir_real="$(cd "$tokens_dir" 2>/dev/null && pwd -P)" || exit 0
+case "$tokens_dir_real" in
+  "$proj_dir_real"/tokens) ;;
+  *) exit 0 ;;
+esac
+case "$token_file" in
+  "$tokens_dir_real"/*.token) ;;
+  *) exit 0 ;;
+esac
 
 tmp="$(mktemp "${tokens_dir}/.token.XXXXXX")"
 {

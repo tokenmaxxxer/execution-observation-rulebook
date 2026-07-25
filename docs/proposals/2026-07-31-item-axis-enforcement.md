@@ -135,3 +135,11 @@ against the rewritten gate no longer strands the transition.
   other items' unrelated fields" reliably was not worth the complexity: the
   gate now refuses any write that changes more than one item's state,
   requiring one write per transition.
+- First pass of the gate rewrite built `token_path`/`consuming_path`
+  straight from the unvalidated `item:` field, with no normalization and no
+  containment check, so a forged path (`item:
+  ../../../../../../../../tmp/evil-item`) bypassed the human-only gate
+  entirely — a before-landing warrant hunt found it
+  (`docs/reports/2026-07-31-hunt-item-axis-enforcement.md`). Fixed by
+  adding an item id / project identifier allow-list plus a resolve-then-contain
+  path check in both `transition-gate.sh` and `capture-verdict.sh`.
