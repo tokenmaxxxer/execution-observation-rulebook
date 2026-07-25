@@ -15,9 +15,15 @@ SURFACE GATE: applies when QA work is triaging a failing case, judging whether a
 TRIGGER CONDITIONS: a run-record case has verdict `fail`; an item is in `reproduced` awaiting the is-this-a-defect verdict; or the user asks to hand off, close, or update an item.
 
 RULES:
+<!-- gate-covers: reproduced->handed-off, reproduced->not-a-defect, reproduced->wont-fix, field:severity, field:priority -->
 - Severity and priority are two SEPARATE fields with an asymmetric contract, not two equally-guarded fields. Severity is technical/functional impact: agent-set, closed set (`critical`/`major`/`minor`/`trivial`), no lock — set it directly when filing. Priority is fix order relative to other work: human-set only. Changing priority requires a verdict token minted by `signoff/hooks/capture-verdict.sh` from the user's own turn, bound to this item id, the `priority` field, and the new value; without that token the gate refuses the write. Never collapse the two fields into one value or let one setter default the other. A `priority-set-by: human` marker may still be written alongside a priority change as a human-readable provenance note, but it is descriptive only — it authorizes nothing and plays no part in the gate's decision, which looks solely at the matching token. Never write that marker believing it stands in for the token.
+  <!-- gate-claim: field severity actor=agent requires=closed-set -->
+  <!-- gate-claim: field priority actor=human requires=token,closed-set -->
 - An item moves `reproduced -> handed-off` ONLY on a human ruling. The agent's job stops at presenting the reproduction attempt — logged against a matching build/OS — plus the expected-vs-actual delta. The agent never hands an item to the coding agent on its own judgment; it hands the call to a human and waits.
+  <!-- gate-claim: transition reproduced->handed-off actor=human requires=token -->
 - Closing an item as `not-a-defect` or `wont-fix` requires the item to already carry a recorded reproduction procedure (it can only reach these states from `reproduced`) on a matching build/OS, not inspection of the code or a guess. No recorded reproduction, no closure — say so and stop. An item that failed to reproduce belongs in `parked-unreproducible`, not here.
+  <!-- gate-claim: transition reproduced->not-a-defect actor=human requires=token -->
+  <!-- gate-claim: transition reproduced->wont-fix actor=human requires=token -->
 - A report's anatomy, every time: title, numbered steps from a known starting state, expected versus actual behavior, environment (build/OS/config), and evidence (command+output, screenshot, or log excerpt).
 - A confirmed bug never lives only in chat: file it via the /bug discipline, or record it in the run record as UNFILED with the reason. Chat scrolls away; the tracker is the record.
 - File nothing you did not reproduce. Repro steps come from an actual reproduction in this session, and the report links its evidence.

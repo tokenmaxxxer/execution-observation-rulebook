@@ -19,6 +19,11 @@ THE RULES:
 - `qa-cycle` is the only writer of `state.md`. No sibling plugin edits it directly; every state change is a write attempt that this plugin's PreToolUse gate (`transition-gate.sh`) checks against the transition table in `docs/specs/qa-cycle-state-machine.md` before it lands.
 - The gate allows exactly what that table allows from an item's current state, nothing more. A transition the table does not list is refused, naming the current state and what is legal from it.
 - Four transitions are human-only by construction: `reproduced -> handed-off`, `reproduced -> not-a-defect`, `reproduced -> wont-fix`, `handed-off -> re-verifying`. An agent cannot cause these alone. They require a matching, unconsumed verdict token minted by `signoff` from the user's own turn, bound to the specific item and transition, and the gate consumes that token the moment it permits the write.
+  <!-- gate-covers: reproduced->handed-off, reproduced->not-a-defect, reproduced->wont-fix, handed-off->re-verifying -->
+  <!-- gate-claim: transition reproduced->handed-off actor=human requires=token -->
+  <!-- gate-claim: transition reproduced->not-a-defect actor=human requires=token -->
+  <!-- gate-claim: transition reproduced->wont-fix actor=human requires=token -->
+  <!-- gate-claim: transition handed-off->re-verifying actor=human requires=token -->
 - Other plugins request a transition; they do not perform one. Compose the write and let this plugin's gate be the thing that decides whether it lands.
 
 NEVER:

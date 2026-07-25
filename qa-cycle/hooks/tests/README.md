@@ -89,3 +89,43 @@ separately from the "ambiguous write" refusal path the gate takes for any
 write that changes more than one item's state at once). See
 `docs/reports/2026-07-31-gate-enforcement.md` for the results this produced
 and what they mean.
+
+## `directive-drift-check.sh`
+
+A separate script, run as the final step of `run-gate-tests.sh` (and
+runnable standalone), that checks a different thing than the 30 cases
+above: not the gate's observed exit codes, but whether the seven
+`*/hooks/directive.sh` files' prose still matches what the gate enforces.
+
+It runs `transition-gate.sh --dump-facts` (a read-only flag that prints the
+gate's own `TABLE`/`FIELDS` structures as JSON — the same structures its
+decision logic branches on, not a second description of them), extracts
+`gate-covers` and `gate-claim` HTML-comment markers from each directive by
+plain grep, and compares:
+
+1. Every `gate-claim` against `--dump-facts` — a claimed subject the gate
+   doesn't have, or a claimed actor/`requires` that doesn't match, is a
+   hard failure naming the file and the mismatch.
+2. Every subject a directive's own `gate-covers` line declares must have a
+   matching `gate-claim` in that same file — a declared-but-unclaimed
+   subject is a hard failure.
+3. Every transition/field the gate enforces that no directive's
+   `gate-covers` mentions at all — printed as an informational line, never
+   a failure. Run today, this lists exactly four rows no directive
+   currently claims responsibility for: the bootstrap `(none)->observed`
+   row, `parked-unreproducible->observed`, and both `re-verifying` rows.
+
+A marker that doesn't parse (malformed `gate-claim`/`gate-covers` shape) is
+also a hard failure — never silently skipped, same refuse-by-default
+reasoning the gate itself uses.
+
+Run it standalone:
+
+```sh
+qa-cycle/hooks/tests/directive-drift-check.sh
+```
+
+See `docs/proposals/2026-08-04-directive-drift-check.md` for the design
+and what this check deliberately cannot catch (a directive quietly
+dropping a `gate-covers` declaration it used to make; whether a
+directive's prose is good advice).
