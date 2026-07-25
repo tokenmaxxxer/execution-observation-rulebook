@@ -56,11 +56,45 @@ Each verdict token is single-use and binds to BOTH a specific item id AND a spec
 
 While an item sits in `handed-off`, the coding agent's progress is invisible to this system by design — nothing observes it. Only the `handed-off → re-verifying` human trigger moves the item out.
 
+## Severity and priority
+
+Two additional fields live on the item record, alongside state, reproduction,
+and evidence. Both are closed-set enums; neither participates in the
+transition table's states or rows — they are properties an item carries
+while it moves through the table, not axes of the table itself. See
+[docs/proposals/2026-08-02-severity-priority-axes.md](../proposals/2026-08-02-severity-priority-axes.md)
+and issue #16.
+
+- **`severity`** — one of `critical`, `major`, `minor`, `trivial`. **Actor:
+  agent.** Severity is what was observed (crash/data-loss vs. cosmetic), the
+  same kind of judgment the agent already exercises recording the
+  reproduction procedure. It is set or revised as part of the
+  `reproducing -> reproduced` transition's evidence.
+  **Precondition, stated explicitly:** an item cannot enter `reproduced`
+  without a valid `severity` already present in the attempted write — the
+  gate refuses `reproducing -> reproduced` whenever `severity` is absent,
+  empty, outside the closed set, or declared more than once in the item's
+  block (exactly one `severity:` line is required; zero or multiple both
+  mean "no severity," which refuses). No other transition requires
+  `severity`.
+- **`priority`** — one of `now`, `next`, `later`, `someday`. **Actor:
+  human.** Priority ranks an item against other items and schedule, a
+  decision distinct from whether it is a genuine defect. It is NOT required
+  for `handed-off` or any other transition — an item may sit without a
+  priority indefinitely. Because it is human-set, any write that changes an
+  item's recorded `priority` value requires a priority verdict token bound
+  to `(item id, field name, new value)`, minted only by
+  `signoff/hooks/capture-verdict.sh` from the user's own turn, per the same
+  discipline as the four human-locked state transitions above. This token
+  is distinct from the state-transition token and does not gate any row in
+  the transition table above — it gates the `priority` field itself,
+  independently of what transition (if any) the same write also attempts.
+
 ## Persisted item state
 
 All state lives under `$QA_WORKSPACE/projects/<owner>-<repo>/` (default workspace root `~/qa-workspace` if `$QA_WORKSPACE` is unset), never in the target repo, and never as a copy of target code. Per the existing plugins' policy: env vars are recorded by name only, never by value.
 
-- Each feedback item's record carries, at minimum: item id, current state, the reproduction procedure once recorded (this is what makes `re-verifying` reachable at all — without it the state is unreachable in practice), and the evidence for the most recent transition. It carries no bug report body and no target-project code; those live in the target project's own tracker.
+- Each feedback item's record carries, at minimum: item id, current state, the reproduction procedure once recorded (this is what makes `re-verifying` reachable at all — without it the state is unreachable in practice), the evidence for the most recent transition, `severity` (agent-set, required to reach `reproduced`, see "Severity and priority" above), and `priority` (human-set, optional, token-gated when changed). It carries no bug report body and no target-project code; those live in the target project's own tracker.
 - `intake.md` — a reader can reconstruct: tracker repo, issue template path, labels, app launch/stop/ready commands, test framework and directory, env var names (unset values), and report language. Every item record reads this profile.
 - `runs/<YYYY-MM-DD>-<slug>.md` — the session record a `reproducing`/`reproduced` attempt is logged against; carries the app version/commit under test and the evidence pointers items cite.
 - `evidence/<item-id>/` — holds the screenshots/log excerpts a reproduction procedure references; a reader can reconstruct what was actually observed, not just the verdict.
@@ -91,7 +125,7 @@ Note: `qa-cycle/hooks/transition-gate.sh` and `signoff/hooks/capture-verdict.sh`
 - Whether an item's identity persists across `parked-unreproducible → observed` re-entry (same item id, new observation appended) versus spawning a new item that references the parked one — this revision assumes same item id (re-entry, not a new item) but does not settle how the record represents "which observation is current" when several have accumulated.
 - Whether `wont-fix` and `not-a-defect` need distinguishable downstream handling by `stats` (a won't-fix is a defect, a not-a-defect is not) — this revision keeps them as separate terminal states so the distinction is at least representable, but does not specify a stats report format.
 - How `re-verifying → reproducing` interacts with a coding agent that has already moved on to other work — this revision only requires the re-run result as evidence; it does not model whether the item automatically re-enters `handed-off`-bound territory or waits for a fresh human hand-off.
-- The severity/priority questions from the prior revision (reporter-set vs. human-set initial estimate, engineering-owned vs. jointly negotiated priority) are **not settled by this revision** — they were properties of the filed-defect layer, which now lives in the target project's tracker and outside this item record's scope.
+- The severity/priority questions from the prior revision are now settled by [docs/proposals/2026-08-02-severity-priority-axes.md](../proposals/2026-08-02-severity-priority-axes.md) — see "Severity and priority" above.
 - Whether the gate/token code update (transition-gate.sh, capture-verdict.sh) should be a single follow-up unit or split by concern — left open for that follow-up's own scoping.
 
 Note: the human-gate-vs-pipeline-gate dispute is not reopened here — it remains settled by [docs/decisions/2026-07-26-human-gate-over-pipeline-gate.md](../decisions/2026-07-26-human-gate-over-pipeline-gate.md).

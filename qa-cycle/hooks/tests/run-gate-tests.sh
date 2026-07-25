@@ -39,6 +39,37 @@ item_block() {
   printf -- '---\nitem: %s\nstate: %s\nreproduction:\nevidence:\n---\n' "$id" "$state"
 }
 
+item_block_with_severity() {
+  # item_block_with_severity <item-id> <state> <severity-lines-raw>
+  # <severity-lines-raw> is inserted verbatim (may be zero, one, or two
+  # `severity:` lines) so callers can construct the malformed-shape cases.
+  local id="$1" state="$2" severity_lines="$3"
+  printf -- '---\nitem: %s\nstate: %s\nreproduction: steps\nevidence:\n%s---\n' "$id" "$state" "$severity_lines"
+}
+
+item_block_with_priority() {
+  # item_block_with_priority <item-id> <state> <priority-value-or-empty>
+  local id="$1" state="$2" priority="$3"
+  if [ -n "$priority" ]; then
+    printf -- '---\nitem: %s\nstate: %s\nreproduction:\nevidence:\npriority: %s\n---\n' "$id" "$state" "$priority"
+  else
+    item_block "$id" "$state"
+  fi
+}
+
+write_priority_token() {
+  # write_priority_token <ws> <slug> <item-id> <value> <phrase>
+  local ws="$1" slug="$2" item="$3" value="$4" phrase="$5"
+  local dir="${ws}/projects/${slug}/tokens"
+  mkdir -p "$dir"
+  {
+    printf 'item: %s\n' "$item"
+    printf 'field: priority\n'
+    printf 'value: %s\n' "$value"
+    printf 'phrase: %s\n' "$phrase"
+  } > "${dir}/${item}.priority.token"
+}
+
 write_state() {
   # write_state <ws> <slug> <content>
   local ws="$1" slug="$2" content="$3"
@@ -411,6 +442,137 @@ write_state "$ws20" "$slug" "$(item_block BUG-1 observed)"
 payload="$(payload_write "${ws20}/projects/${slug}/state.md" "$(item_block BUG-1 reproducing)")"
 run_case "project-id-disallowed-characters-refused" 2 "$ws20" "$payload"
 cleanup_ws "$ws20"
+
+# =========================================================================
+# Case 21: item missing `severity` attempting reproducing -> reproduced
+#          -> expect refuse (the precondition from docs/specs/
+#          qa-cycle-state-machine.md "Severity and priority").
+# =========================================================================
+ws21="$(new_workspace)"
+slug="owner-repo"
+write_state "$ws21" "$slug" "$(item_block BUG-1 reproducing)"
+payload="$(payload_write "${ws21}/projects/${slug}/state.md" "$(item_block_with_severity BUG-1 reproduced "")")"
+run_case "reproduced-missing-severity-refused" 2 "$ws21" "$payload"
+cleanup_ws "$ws21"
+
+# =========================================================================
+# Case 22: `severity` outside the closed set -> expect refuse
+# =========================================================================
+ws22="$(new_workspace)"
+slug="owner-repo"
+write_state "$ws22" "$slug" "$(item_block BUG-1 reproducing)"
+payload="$(payload_write "${ws22}/projects/${slug}/state.md" "$(item_block_with_severity BUG-1 reproduced $'severity: catastrophic\n')")"
+run_case "reproduced-severity-outside-closed-set-refused" 2 "$ws22" "$payload"
+cleanup_ws "$ws22"
+
+# =========================================================================
+# Case 23: two `severity` lines in one record -> expect refuse (zero or
+#          multiple both mean "no severity", which refuses the precondition)
+# =========================================================================
+ws23="$(new_workspace)"
+slug="owner-repo"
+write_state "$ws23" "$slug" "$(item_block BUG-1 reproducing)"
+payload="$(payload_write "${ws23}/projects/${slug}/state.md" "$(item_block_with_severity BUG-1 reproduced $'severity: major\nseverity: minor\n')")"
+run_case "reproduced-two-severity-lines-refused" 2 "$ws23" "$payload"
+cleanup_ws "$ws23"
+
+# =========================================================================
+# Case 24: valid severity present -> reproducing -> reproduced allowed
+# =========================================================================
+ws24="$(new_workspace)"
+slug="owner-repo"
+write_state "$ws24" "$slug" "$(item_block BUG-1 reproducing)"
+payload="$(payload_write "${ws24}/projects/${slug}/state.md" "$(item_block_with_severity BUG-1 reproduced $'severity: major\n')")"
+run_case "reproduced-valid-severity-allowed" 0 "$ws24" "$payload"
+cleanup_ws "$ws24"
+
+# =========================================================================
+# Case 25: `priority` change with no token -> expect refuse
+# =========================================================================
+ws25="$(new_workspace)"
+slug="owner-repo"
+write_state "$ws25" "$slug" "$(item_block BUG-1 reproduced)"
+payload="$(payload_write "${ws25}/projects/${slug}/state.md" "$(item_block_with_priority BUG-1 reproduced now)")"
+run_case "priority-change-no-token-refused" 2 "$ws25" "$payload"
+cleanup_ws "$ws25"
+
+# =========================================================================
+# Case 26: a priority token minted for a different item -> expect refuse
+# =========================================================================
+ws26="$(new_workspace)"
+slug="owner-repo"
+write_state "$ws26" "$slug" "$(item_block BUG-1 reproduced)$(item_block BUG-2 reproduced)"
+write_priority_token "$ws26" "$slug" "BUG-2" "now" "item BUG-2 priority now"
+payload="$(payload_write "${ws26}/projects/${slug}/state.md" "$(item_block_with_priority BUG-1 reproduced now)$(item_block BUG-2 reproduced)")"
+run_case "priority-token-for-different-item-refused" 2 "$ws26" "$payload"
+cleanup_ws "$ws26"
+
+# =========================================================================
+# Case 27: a priority token minted for the same item but a different value
+#          -> expect refuse
+# =========================================================================
+ws27="$(new_workspace)"
+slug="owner-repo"
+write_state "$ws27" "$slug" "$(item_block BUG-1 reproduced)"
+write_priority_token "$ws27" "$slug" "BUG-1" "later" "item BUG-1 priority later"
+payload="$(payload_write "${ws27}/projects/${slug}/state.md" "$(item_block_with_priority BUG-1 reproduced now)")"
+run_case "priority-token-for-different-value-refused" 2 "$ws27" "$payload"
+cleanup_ws "$ws27"
+
+# =========================================================================
+# Case 28: a forged `priority-set-by: human` marker with no token -> expect
+#          refuse. This is the hunt's exact reproduction
+#          (docs/reports/2026-08-02-hunt-severity-priority-axes.md): an
+#          agent writes both the changed `priority:` value and a
+#          self-authored `priority-set-by: human` line in the same Write
+#          call, with no token anywhere. The marker must now play no part
+#          in the decision — it must fail closed.
+# =========================================================================
+ws28="$(new_workspace)"
+slug="owner-repo"
+write_state "$ws28" "$slug" "$(item_block BUG-1 reproduced)"
+forged_content="$(printf -- '---\nitem: BUG-1\nstate: reproduced\nreproduction:\nevidence:\npriority: now\npriority-set-by: human\n---\n')"
+payload="$(payload_write "${ws28}/projects/${slug}/state.md" "$forged_content")"
+run_case "forged-priority-set-by-marker-no-token-refused" 2 "$ws28" "$payload"
+cleanup_ws "$ws28"
+
+# =========================================================================
+# Case 29: a valid priority token, consumed once, then replayed -> the
+#          first attempt allows and reserves (consuming marker), the write
+#          actually lands, and a second identical attempt with the token
+#          already spent must refuse (single-use).
+# =========================================================================
+ws29="$(new_workspace)"
+slug="owner-repo"
+write_state "$ws29" "$slug" "$(item_block BUG-1 reproduced)"
+write_priority_token "$ws29" "$slug" "BUG-1" "now" "item BUG-1 priority now"
+payload="$(payload_write "${ws29}/projects/${slug}/state.md" "$(item_block_with_priority BUG-1 reproduced now)")"
+run_case "priority-token-first-use-allowed" 0 "$ws29" "$payload"
+expect_file "priority-live-token-gone" "${ws29}/projects/${slug}/tokens/BUG-1.priority.token" "absent"
+expect_file "priority-consuming-marker-present" "${ws29}/projects/${slug}/tokens/BUG-1.priority.consuming" "exists"
+
+# Land the write for real (advance state.md), then finalize + attempt a
+# second, different priority change with no fresh token -> must refuse.
+write_state "$ws29" "$slug" "$(item_block_with_priority BUG-1 reproduced now)"
+payload="$(payload_write "${ws29}/projects/${slug}/state.md" "$(item_block_with_priority BUG-1 reproduced next)")"
+run_case "priority-token-replay-for-new-value-refused" 2 "$ws29" "$payload"
+cleanup_ws "$ws29"
+
+# =========================================================================
+# Case 30: a valid priority change whose underlying write fails must remain
+#          completable without a fresh human token (reserve-then-finalize,
+#          same discipline as the state-transition token).
+# =========================================================================
+ws30="$(new_workspace)"
+slug="owner-repo"
+write_state "$ws30" "$slug" "$(item_block BUG-1 reproduced)"
+write_priority_token "$ws30" "$slug" "BUG-1" "now" "item BUG-1 priority now"
+payload="$(payload_write "${ws30}/projects/${slug}/state.md" "$(item_block_with_priority BUG-1 reproduced now)")"
+run_case "priority-consumption-timing-first-allow-write-does-not-land" 0 "$ws30" "$payload"
+# state.md deliberately left unadvanced, modeling the permitted write failing.
+payload="$(payload_write "${ws30}/projects/${slug}/state.md" "$(item_block_with_priority BUG-1 reproduced now)")"
+run_case "priority-consumption-timing-retry-still-allowed" 0 "$ws30" "$payload"
+cleanup_ws "$ws30"
 
 # --- tally -------------------------------------------------------------------
 

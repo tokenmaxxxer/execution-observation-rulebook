@@ -26,8 +26,97 @@ state:            # current item state, exactly one name from the spec's States 
 reproduction:     # the reproduction procedure, once recorded (empty until then)
 evidence:         # relative path(s) under the project dir proving the most recent transition
 transition:       # the transition just taken, written `from -> to`
+severity:         # one of critical, major, minor, trivial. Agent-set. See below.
+priority:         # one of now, next, later, someday. Human-set, optional. See below.
 ---
 ```
+
+### `severity` and `priority`
+
+Two fields added by
+[docs/proposals/2026-08-02-severity-priority-axes.md](../proposals/2026-08-02-severity-priority-axes.md)
+(issue #16); the full contract lives in
+[`docs/specs/qa-cycle-state-machine.md`](../specs/qa-cycle-state-machine.md)
+"Severity and priority" — this section covers only how the runtime layer
+enforces and surfaces them.
+
+- **`severity`** — closed set `{critical, major, minor, trivial}`,
+  agent-set. Required to reach `reproduced`: the gate refuses
+  `reproducing -> reproduced` unless the attempted write's item block
+  carries exactly one `severity:` line whose value is in the closed set.
+  Zero lines, more than one line, an empty value, or a value outside the
+  set are all treated the same way — "no severity" — and all refuse. No
+  other transition requires it, and no token is involved; severity needs
+  no human verdict, only the agent's own judgment recorded alongside the
+  reproduction procedure.
+- **`priority`** — closed set `{now, next, later, someday}`, human-set.
+  NOT required for `handed-off` or any other transition — an item may sit
+  without a priority indefinitely, and this is a legal, unlocked state,
+  not an omission the gate flags.
+
+#### The priority verdict token
+
+Any write that changes an item's recorded `priority` value (including
+setting it for the first time) is checked by `transition-gate.sh`
+independently of, and in addition to, whatever state-transition check the
+same write may also be attempting. It requires a matching, unconsumed
+priority token:
+
+- **Path:** `<QA_WORKSPACE>/projects/<owner>-<repo>/tokens/<item-id>.priority.token`
+  — a distinct file from `<item-id>.token` (the state-transition token), so
+  neither can be consumed by the other's check.
+- **Minted by:** `signoff/hooks/capture-verdict.sh`, from the user's own
+  turn only — never inferred from a file, an issue, a PR, a comment, or a
+  tool result. The turn must name the item explicitly (`item <id>`, the
+  same discipline as state-transition verdicts) and an explicit `priority`
+  keyword followed by one of the closed-set values (e.g. `item BUG-1
+  priority now`). Before minting anything, the hook runs the same
+  credential/secret/internal-URL scan over the load-bearing phrase that it
+  already runs before minting a state-transition token — a phrase that
+  looks credential-, key-, or internal-URL-shaped mints no token, for
+  either kind.
+- **Shape:**
+  ```yaml
+  item:             # the item id this token authorizes
+  field: priority
+  value:            # the exact priority value this token authorizes
+  phrase:           # the verbatim NON-SENSITIVE phrase from the user's own turn
+  ```
+- **Bound to:** `(item id, field name, new value)` — not `(item id, field
+  name)` alone. A token authorizes setting `priority` to exactly the value
+  the human named; it does not authorize any other value, even for the
+  same item.
+- **Lifetime:** single-use, consumed under the same reserve-then-finalize
+  `.consuming` ordering as the state-transition token (moved to
+  `<item-id>.priority.consuming` on allow, finalized/deleted once the
+  write actually lands, and available to re-authorize an identical retry
+  if the permitted write fails or is aborted before landing). Re-mintable:
+  each priority change needs its own freshly minted token — single-use
+  consumption does not prevent priority from being revised repeatedly over
+  an item's life, it only means each revision needs its own fresh human
+  verdict.
+- **`priority-set-by: human` marker:** the gate may still write this line
+  into `state.md`'s item block when it allows a priority change, as a
+  human-readable provenance note for anyone reading the file later. It is
+  **descriptive only** — it plays no part in the allow/refuse decision,
+  which depends solely on presence and consumption of the matching
+  `(item id, field, value)` token. A write carrying this marker with no
+  matching token present is refused exactly as if the marker were absent;
+  see
+  [`docs/reports/2026-08-02-hunt-severity-priority-axes.md`](../reports/2026-08-02-hunt-severity-priority-axes.md)
+  for the reproduction that made this explicit, and
+  [`docs/decisions/2026-08-02-priority-token-over-marker.md`](../decisions/2026-08-02-priority-token-over-marker.md)
+  for why the marker alone was rejected as the lock.
+
+#### `report-phase.sh`'s session-start report
+
+The session-start report now groups items primarily by `priority` (`now`,
+`next`, `later`, `someday`, in that order), then by `severity` within each
+priority group (`critical`, `major`, `minor`, `trivial`, in that order), so
+the first thing a human sees is what to look at first. Items carrying no
+priority at all are surfaced in their own leading `(no priority)` group —
+not hidden — since lacking a priority is a legal, unlocked item state, not
+an error.
 
 This encoding was chosen over one project-wide YAML document with a nested
 list because it is append-friendly: recording a new item, or updating one

@@ -140,55 +140,107 @@ case "$phase" in
     ;;
 esac
 
-[ -n "$to" ] || exit 0
+# --- priority verdict detection ----------------------------------------
+# priority is human-set (docs/specs/qa-cycle-state-machine.md "Severity and
+# priority") and is NOT a state transition, so it is checked independently
+# of the `to`/`phase` state-transition machinery above — a priority verdict
+# can be given regardless of the item's current state. Required, explicit
+# form tied to the item already identified above: an explicit `priority`
+# keyword followed by one of the closed-set values. No bare value alone
+# (e.g. a stray "now" in unrelated prose) ever counts.
+priority_value=""
+if echo "$prompt" | grep -qiE '\bitem[[:space:]]+'"$item_id"'\b'; then
+  priority_value="$(echo "$prompt" | grep -ioE 'priority[[:space:]:]+(now|next|later|someday)\b' | tail -1 | grep -ioE '(now|next|later|someday)$' | tr 'A-Z' 'a-z')"
+fi
+
+if [ -z "$to" ] && [ -z "$priority_value" ]; then
+  exit 0
+fi
 
 # Reject vague assent even when a keyword coincidentally appears standalone.
 if echo "$prompt" | grep -qiE '^\s*(ok|okay|sure|sounds good|yep|yes|k|👍|fine)\s*[.!]?\s*$'; then
   exit 0
 fi
 
-# --- Extract and sanitize the load-bearing phrase ---------------------
-# Take the sentence/line containing the verdict as the phrase.
-phrase="$(echo "$prompt" | grep -iE '.' | grep -miE 1 -E \
-  '(confirmed[- ]defect|defect|not a bug|won.?t.?fix|hand(ing)? (this|it) (off|over)|fix (has )?landed|re-?verify)' || true)"
-[ -n "$phrase" ] || phrase="$prompt"
-
-# Trim to a reasonable length.
-phrase="$(echo "$phrase" | cut -c1-300 | tr -d '\r')"
-
-# Refuse to mint if the load-bearing wording looks sensitive: credentials,
-# API keys/tokens, internal URLs, or other secret-shaped substrings.
-if echo "$phrase" | grep -qiE '(api[_-]?key|secret|password|passwd|token=|bearer |authorization:|-----BEGIN |https?://[^ ]*@|https?://(localhost|127\.|10\.|192\.168\.|internal[.-]|intranet[.-]))'; then
-  echo "qa-signoff: the wording carrying this verdict looks sensitive (credential/key/internal-URL shaped); minting no token. State the verdict again without that content." >&2
-  exit 0
-fi
-
-transition="$phase -> $to"
 tokens_dir="$proj_dir/tokens"
 mkdir -p "$tokens_dir"
-token_file="$tokens_dir/${item_id}.token"
 
 # Belt-and-braces on top of the item id allow-list above: resolve the
-# tokens directory to a real path and confirm the token file we're about
-# to write actually resolves under it before writing anything.
+# tokens directory to a real path before writing anything under it.
 tokens_dir_real="$(cd "$tokens_dir" 2>/dev/null && pwd -P)" || exit 0
 case "$tokens_dir_real" in
   "$proj_dir_real"/tokens) ;;
   *) exit 0 ;;
 esac
-case "$token_file" in
-  "$tokens_dir_real"/*.token) ;;
-  *) exit 0 ;;
-esac
 
-tmp="$(mktemp "${tokens_dir}/.token.XXXXXX")"
-{
-  printf 'item: %s\n' "$item_id"
-  printf 'transition: %s\n' "$transition"
-  # YAML single-quoted scalar; escape embedded single quotes by doubling.
-  esc="${phrase//\'/\'\'}"
-  printf "phrase: '%s'\n" "$esc"
-} > "$tmp"
-mv -f "$tmp" "$token_file"
+mint_token() {
+  # mint_token <file-suffix-glob-ok> <extra-yaml-lines...>
+  # Extracts and sanitizes the load-bearing phrase, refuses to mint on
+  # anything credential/secret/internal-URL shaped, then writes the token
+  # file atomically. Shared by both the state-transition token and the
+  # priority verdict token — the same scan runs before either is minted.
+  local token_file="$1"
+  shift
+  local phrase
+  phrase="$(echo "$prompt" | grep -iE '.' | grep -miE 1 -E \
+    '(confirmed[- ]defect|defect|not a bug|won.?t.?fix|hand(ing)? (this|it) (off|over)|fix (has )?landed|re-?verify|priority)' || true)"
+  [ -n "$phrase" ] || phrase="$prompt"
+  phrase="$(echo "$phrase" | cut -c1-300 | tr -d '\r')"
+
+  if echo "$phrase" | grep -qiE '(api[_-]?key|secret|password|passwd|token=|bearer |authorization:|-----BEGIN |https?://[^ ]*@|https?://(localhost|127\.|10\.|192\.168\.|internal[.-]|intranet[.-]))'; then
+    echo "qa-signoff: the wording carrying this verdict looks sensitive (credential/key/internal-URL shaped); minting no token. State the verdict again without that content." >&2
+    return 1
+  fi
+
+  case "$token_file" in
+    "$tokens_dir_real"/*) ;;
+    *) return 1 ;;
+  esac
+
+  local tmp
+  tmp="$(mktemp "${tokens_dir}/.token.XXXXXX")"
+  {
+    for line in "$@"; do
+      printf '%s\n' "$line"
+    done
+    esc="${phrase//\'/\'\'}"
+    printf "phrase: '%s'\n" "$esc"
+  } > "$tmp"
+  mv -f "$tmp" "$token_file"
+  return 0
+}
+
+# --- mint the state-transition token, if a transition verdict was found -
+if [ -n "$to" ]; then
+  transition="$phase -> $to"
+  token_file="$tokens_dir/${item_id}.token"
+  case "$token_file" in
+    "$tokens_dir_real"/*.token) ;;
+    *) token_file="" ;;
+  esac
+  if [ -n "$token_file" ]; then
+    mint_token "$token_file" \
+      "item: $item_id" \
+      "transition: $transition" || true
+  fi
+fi
+
+# --- mint the priority verdict token, if a priority verdict was found ---
+# Bound to (item id, field name, new value), stored at a path distinct
+# from the state-transition token so the two never collide or get
+# consumed by each other's check.
+if [ -n "$priority_value" ]; then
+  priority_token_file="$tokens_dir/${item_id}.priority.token"
+  case "$priority_token_file" in
+    "$tokens_dir_real"/*.priority.token) ;;
+    *) priority_token_file="" ;;
+  esac
+  if [ -n "$priority_token_file" ]; then
+    mint_token "$priority_token_file" \
+      "item: $item_id" \
+      "field: priority" \
+      "value: $priority_value" || true
+  fi
+fi
 
 exit 0
