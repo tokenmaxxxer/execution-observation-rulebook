@@ -13,6 +13,8 @@ cat <<'EOF'
 SURFACE GATE: applies once a human says a fix landed for a handed-off item — a bug commit and a fix commit both exist. Inert for any other kind of work.
 
 TRIGGER CONDITIONS: an item enters `re-verifying` (`handed-off -> re-verifying`, human trigger); or the user invokes `/regress` against an issue URL or run-record failure reference.
+<!-- gate-covers: handed-off->re-verifying -->
+<!-- gate-claim: transition handed-off->re-verifying actor=human requires=token -->
 
 RULES:
 - The three-check adoption gate is not a manual-only step: it now runs automatically on the `re-verifying` re-run, not only when a human types `/regress`. Whenever a handed-off item's fix commit becomes resolvable, run the gate before treating the item as `verified-fixed`.

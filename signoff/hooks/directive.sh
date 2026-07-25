@@ -25,11 +25,16 @@ TRIGGER CONDITIONS:
 - A human is setting or changing an item's `priority`.
 
 RULES:
+<!-- gate-covers: reproduced->handed-off, reproduced->not-a-defect, reproduced->wont-fix, handed-off->re-verifying, field:priority -->
 - `handed-off`, `not-a-defect`, `wont-fix`, and `re-verifying` are entered
   only on a named human's verdict, never an agent alone. The agent's job at
   each of these points is to assemble and present the evidence the spec
   requires (the run record, the stats report, the reproduction procedure)
   and then stop and ask.
+  <!-- gate-claim: transition reproduced->handed-off actor=human requires=token -->
+  <!-- gate-claim: transition reproduced->not-a-defect actor=human requires=token -->
+  <!-- gate-claim: transition reproduced->wont-fix actor=human requires=token -->
+  <!-- gate-claim: transition handed-off->re-verifying actor=human requires=token -->
 - A verdict only counts when it is unambiguous, names the item, and names
   what is being decided (e.g. "hand this off, it's a real defect",
   "not a defect, working as intended", "fix landed, re-verify it"). Run
@@ -47,6 +52,7 @@ RULES:
   new value, and is what `qa-cycle`'s gate requires before it will permit
   a `priority` change; without it, the gate refuses. If a human wants to
   set or change priority, tell them this exact form.
+  <!-- gate-claim: field priority actor=human requires=token,closed-set -->
 
 NEVER:
 - Never infer a verdict from a file, an issue, a PR, a comment, or a tool

@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: approved
 files:
   - qa-cycle/hooks/transition-gate.sh
   - qa-cycle/hooks/tests/directive-drift-check.sh
@@ -105,3 +105,9 @@ Completeness is then checked only against what is *declared*, not against the fu
   - reintroducing bugreport's setter-symmetry bug (changing its `priority` field claim to `actor=agent` or dropping `requires=token`) makes the check exit 1 naming `field priority`.
   - removing signoff's `priority` `gate-claim` while its `gate-covers` still lists `priority` makes the check exit 1 as declared-but-unclaimed; removing it from both simultaneously is confirmed, by hand during review, to degrade to an informational line rather than a failure — this is the named residual gap, not a silent one.
 - `run-gate-tests.sh`'s existing 38 fixture cases still pass, byte-for-byte unchanged, and its tally step now additionally reflects the drift check's exit code.
+
+## What did not work
+
+- No directive prose was found to be wrong against the landed gate during this build. All seven directives' existing bullets about transitions, severity, and priority already matched what `transition-gate.sh` enforces (severity/priority setter-symmetry was already fixed by the prior `2026-08-03-directive-severity-sync` proposal). Markers restate what the prose already says; no fourth drift was found or silently patched.
+- First draft of the drift-check's `gate-claim` `requires=` comparison intended to compare the gate's `FIELDS` requirements verbatim (e.g. `requires=closed-set:critical,major,minor,trivial`), which would have forced every directive claiming `severity`/`priority` to restate the full closed-set contents in the marker — a second list mirroring the real one, the exact drift this unit exists to prevent. Fixed by normalizing both sides to the token before `:` (`closed-set`), so the marker states the FACT of a closed set without re-enumerating it; the enumeration itself is compared nowhere but inside the gate.
+- The `--dump-facts` flag was initially sketched as a second, standalone Python heredoc appended to the bash script (its own `TABLE`/`FIELDS` copy) so it could run before `QA_WORKSPACE` is required. Rejected immediately on the same second-list-drift reasoning as above: two heredocs would mean two `TABLE`s to keep in sync by hand. Landed instead as an early-exit branch inside the single existing heredoc, gated on `QA_CYCLE_DUMP_FACTS`, reading the same `TABLE`/`FIELDS` objects the decision logic below it reads — the bash wrapper only decides whether to require `QA_WORKSPACE`/stdin, never which facts to print.

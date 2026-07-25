@@ -579,7 +579,21 @@ cleanup_ws "$ws30"
 echo ""
 echo "=== tally: ${PASS_COUNT} passed, ${FAIL_COUNT} failed (of $((PASS_COUNT + FAIL_COUNT)) cases) ==="
 
-if [ "$FAIL_COUNT" -ne 0 ]; then
+# --- final step: directive-drift-check ---------------------------------
+# Separate script, separate mechanism (compares directive markers against
+# transition-gate.sh --dump-facts) — not folded into the run_case fixture
+# machinery above. See docs/proposals/2026-08-04-directive-drift-check.md.
+echo ""
+echo "=== directive-drift-check ==="
+drift_rc=0
+"${SCRIPT_DIR}/directive-drift-check.sh" || drift_rc=$?
+if [ "$drift_rc" -ne 0 ]; then
+  echo "=== directive-drift-check: FAILED (exit ${drift_rc}) ==="
+else
+  echo "=== directive-drift-check: passed ==="
+fi
+
+if [ "$FAIL_COUNT" -ne 0 ] || [ "$drift_rc" -ne 0 ]; then
   exit 1
 fi
 exit 0

@@ -38,14 +38,31 @@ esac
 
 command -v python3 >/dev/null 2>&1 || { echo "qa-cycle: python3 not found; refusing rather than allowing an unchecked write." >&2; exit 2; }
 
-if [ -z "${QA_WORKSPACE:-}" ]; then
-  echo "qa-cycle: refused — QA_WORKSPACE is unset. The gate has no state file to read, so it cannot verify this write is a legal transition. Set QA_WORKSPACE to the QA workspace root." >&2
-  exit 2
+# --dump-facts is a read-only introspection path: it prints the same
+# TABLE/FIELDS structures the decision logic below branches on, as JSON,
+# and exits 0. It touches no state file, no token, no QA_WORKSPACE, and
+# reads no stdin — it is not reachable from, and shares no code path with,
+# any write decision. See qa-cycle/hooks/tests/directive-drift-check.sh,
+# which is the only consumer.
+dump_facts=0
+if [ "${1:-}" = "--dump-facts" ]; then
+  dump_facts=1
 fi
 
-payload="$(cat)"
+if [ "$dump_facts" != 1 ]; then
+  if [ -z "${QA_WORKSPACE:-}" ]; then
+    echo "qa-cycle: refused — QA_WORKSPACE is unset. The gate has no state file to read, so it cannot verify this write is a legal transition. Set QA_WORKSPACE to the QA workspace root." >&2
+    exit 2
+  fi
+fi
 
-QA_CYCLE_PAYLOAD="$payload" QA_CYCLE_WORKSPACE="$QA_WORKSPACE" python3 <<'PY'
+if [ "$dump_facts" = 1 ]; then
+  payload=""
+else
+  payload="$(cat)"
+fi
+
+QA_CYCLE_PAYLOAD="$payload" QA_CYCLE_WORKSPACE="${QA_WORKSPACE:-}" QA_CYCLE_DUMP_FACTS="$dump_facts" python3 <<'PY'
 import json
 import os
 import posixpath
@@ -79,29 +96,53 @@ def refuse(msg):
 # single bootstrap row, ("(none)", "observed", "agent"), not present in the
 # spec's 11-row table. This is the only departure from the spec's table and
 # is documented here and in docs/handbooks/qa-cycle.md.
+# Each row carries its own preconditions in `requires`, so a precondition
+# cannot live only in code the table says nothing about: the decision logic
+# below reads `row["requires"]` to decide whether the token check or the
+# severity check applies to a given row, rather than hard-coding "if actor
+# == human, check token" / "if this is reproducing->reproduced, check
+# severity" as separate, undeclared facts. `--dump-facts` (below) prints
+# this exact structure — not a second list that mirrors it.
 TABLE = [
-    ("(none)", "observed", "agent"),  # bootstrap: first record of a new item
-    ("observed", "reproducing", "agent"),
-    ("reproducing", "reproduced", "agent"),
-    ("reproducing", "observed", "agent"),
-    ("reproducing", "parked-unreproducible", "agent"),
-    ("parked-unreproducible", "observed", "agent"),
-    ("reproduced", "handed-off", "human"),
-    ("reproduced", "not-a-defect", "human"),
-    ("reproduced", "wont-fix", "human"),
-    ("handed-off", "re-verifying", "human"),
-    ("re-verifying", "verified-fixed", "agent"),
-    ("re-verifying", "reproducing", "agent"),
+    {"from": "(none)", "to": "observed", "actor": "agent", "requires": []},  # bootstrap: first record of a new item
+    {"from": "observed", "to": "reproducing", "actor": "agent", "requires": []},
+    {"from": "reproducing", "to": "reproduced", "actor": "agent", "requires": ["severity"]},
+    {"from": "reproducing", "to": "observed", "actor": "agent", "requires": []},
+    {"from": "reproducing", "to": "parked-unreproducible", "actor": "agent", "requires": []},
+    {"from": "parked-unreproducible", "to": "observed", "actor": "agent", "requires": []},
+    {"from": "reproduced", "to": "handed-off", "actor": "human", "requires": ["token"]},
+    {"from": "reproduced", "to": "not-a-defect", "actor": "human", "requires": ["token"]},
+    {"from": "reproduced", "to": "wont-fix", "actor": "human", "requires": ["token"]},
+    {"from": "handed-off", "to": "re-verifying", "actor": "human", "requires": ["token"]},
+    {"from": "re-verifying", "to": "verified-fixed", "actor": "agent", "requires": []},
+    {"from": "re-verifying", "to": "reproducing", "actor": "agent", "requires": []},
 ]
 
-# Every row the spec's table marks Actor: human requires a matching
-# unconsumed verdict token, keyed by the exact (item id, from, to) triple —
-# not by the destination state alone. `handed-off` has exactly one legal
-# outbound row and it is a human row, so "handed-off refuses every
-# transition without a human trigger" falls directly out of table lookup;
-# the explicit assertion below is a defensive backstop, not new logic.
-ACTOR_OF = {(f, t): a for f, t, a in TABLE}
-ALLOWED = set(ACTOR_OF)
+# `priority` and `severity` are fields, not transitions — they sit beside
+# the state machine rather than being rows in it. Made first-class here so
+# `--dump-facts` can state their actor/requirements the same way it states
+# a transition's, instead of leaving them to be discovered only by reading
+# the code below.
+FIELDS = [
+    {"field": "severity", "actor": "agent", "requires": ["closed-set:critical,major,minor,trivial"]},
+    {"field": "priority", "actor": "human", "requires": ["token", "closed-set:now,next,later,someday"]},
+]
+
+if os.environ.get("QA_CYCLE_DUMP_FACTS") == "1":
+    # Read-only: nothing above this point touches state.md, a token file,
+    # or QA_WORKSPACE, and nothing below this line runs.
+    print(json.dumps({"transitions": TABLE, "fields": FIELDS}))
+    sys.exit(0)
+
+# Every row the table marks actor: human requires a matching unconsumed
+# verdict token ("token" in that row's `requires`), keyed by the exact
+# (item id, from, to) triple — not by the destination state alone.
+# `handed-off` has exactly one legal outbound row and it is a human row, so
+# "handed-off refuses every transition without a human trigger" falls
+# directly out of table lookup; the explicit assertion below is a
+# defensive backstop, not new logic.
+ROW_OF = {(r["from"], r["to"]): r for r in TABLE}
+ALLOWED = set(ROW_OF)
 
 # --- severity and priority, per docs/specs/qa-cycle-state-machine.md
 # "Severity and priority" -----------------------------------------------
@@ -383,7 +424,7 @@ state_change_for_item = next(((i, f, t) for i, f, t in state_changed if i == ite
 
 
 def legal_from(state):
-    return sorted({t for f, t, _ in TABLE if f == state})
+    return sorted({r["to"] for r in TABLE if r["from"] == state})
 
 
 if state_change_for_item is not None:
@@ -397,7 +438,9 @@ if state_change_for_item is not None:
             % (item_id, cur, new, cur, ", ".join(legal) if legal else "(none)")
         )
 
-    actor = ACTOR_OF[(cur, new)]
+    row = ROW_OF[(cur, new)]
+    actor = row["actor"]
+    requires = row["requires"]
 
     # Defensive backstop for the spec's "handed-off refuses every transition
     # without a human trigger, without exception": the only legal outbound row
@@ -408,10 +451,11 @@ if state_change_for_item is not None:
         refuse("qa-cycle: refused — item %s is handed-off; no transition out of handed-off is permitted without a human trigger, without exception." % item_id)
 
     # severity precondition: an item cannot enter `reproduced` without a
-    # valid severity already present in the attempted write. Only this one
-    # row of the table carries the precondition — see docs/specs/
+    # valid severity already present in the attempted write. Only rows that
+    # declare "severity" in their own `requires` carry this precondition —
+    # currently exactly reproducing -> reproduced — see docs/specs/
     # qa-cycle-state-machine.md "Severity and priority".
-    if (cur, new) == ("reproducing", "reproduced"):
+    if "severity" in requires:
         new_block = next(b for b in new_blocks if block_item_and_state(b)[0] == item_id)
         severity = block_severity(new_block)
         if severity is None:
@@ -427,9 +471,10 @@ if state_change_for_item is not None:
             )
 else:
     actor = None
+    requires = []
     cur = new = None
 
-if actor == "human":
+if "token" in requires:
     # item_id was already validated by allow-list where it was parsed out
     # of the state.md block (block_item_and_state), before it was ever
     # used in a comparison. Independently of that, the paths built from it
