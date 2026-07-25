@@ -1,5 +1,5 @@
 ---
-status: approved
+status: landed
 issue: "#5"
 files:
   - qa-cycle/.claude-plugin/plugin.json

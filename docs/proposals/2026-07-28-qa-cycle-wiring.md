@@ -1,5 +1,5 @@
 ---
-status: approved
+status: landed
 issue: "#7"
 files:
   - qa-cycle/hooks/hooks.json
