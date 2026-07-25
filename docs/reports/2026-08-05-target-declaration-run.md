@@ -102,3 +102,73 @@ decision outside what was approved here and is left as a follow-up.
 |---|---|---|---|---|
 | `run-gate-tests.sh` (full suite, includes drift check) | 47 fixture cases + drift check | 47 | 0 | 0 |
 | `directive-drift-check.sh` (standalone) | 3 divergence checks, 4 undeclared reports | n/a | 0 | 0 |
+
+## Revision — closing the `re-verifying -> reproducing` gap
+
+The "Known gap outside this build's frozen scope" section above is now
+closed. The user asked, in this same PR, for the hunt's finding to be
+fixed rather than left as a follow-up: the `target` precondition attaches
+to `reproducing` as a DESTINATION STATE, not to a single row, so every row
+in `qa-cycle/hooks/transition-gate.sh`'s `TABLE` whose `to` is
+`reproducing` now carries `"requires": ["target"]`. Today that is exactly
+two rows: `observed -> reproducing` (already covered) and
+`re-verifying -> reproducing` (the row the hunt found unguarded). No
+further row into `reproducing` exists in the 12-row table.
+
+### What was run
+
+```
+$ bash qa-cycle/hooks/tests/run-gate-tests.sh
+...
+case: target-absent-refused-re-verifying-to-reproducing | expected: 2 | observed: 2 | ok
+case: target-valid-declaration-allowed-re-verifying-to-reproducing | expected: 0 | observed: 0 | ok
+
+=== tally: 49 passed, 0 failed (of 49 cases) ===
+
+=== directive-drift-check ===
+
+directive-drift-check: undeclared subjects (informational, not a failure):
+  - transition (none)->observed
+  - transition parked-unreproducible->observed
+  - transition re-verifying->verified-fixed
+  - transition re-verifying->reproducing
+
+directive-drift-check: passed — no directive claim mismatches the gate's declared facts.
+=== directive-drift-check: passed ===
+```
+
+Exit code: `0`. Two new cases were added (40, 41): case 40 reproduces the
+hunt exactly — `re-verifying -> reproducing` with no `target.md` anywhere
+in the workspace — and now refuses. Case 41 is its companion: the same
+transition with a valid target declaration referenced by the write's own
+evidence still allows. Every one of the 47 pre-existing cases (including
+the earlier revision's Case 1 fixup) passes unchanged, so no further
+fixture needed correction — no existing case exercised
+`re-verifying -> reproducing` before this revision.
+
+`re-verifying -> reproducing` still shows as an "undeclared subject" in
+the drift check's informational report, exactly as it did before this
+revision (no directive's `gate-covers` names it, on either side of this
+change) — this is informational, not a hard failure, and the drift check
+still exits `0`.
+
+### The hunt's reproduction, re-run against the fixed gate
+
+Re-running `docs/reports/2026-08-05-hunt-target-declaration.md`'s exact
+reproduction (`WS=/tmp/target-hunt-ws`, `BUG-1` moving
+`re-verifying -> reproducing` with no `target.md` anywhere in the
+workspace) now refuses:
+
+```
+qa-cycle: refused — item BUG-1: re-verifying -> reproducing requires a target declaration at /tmp/target-hunt-ws/projects/acme-app/target.md and none is present. The agent writes target.md (label, entry_point, env_names — names only, never values) before attempting this transition.
+```
+
+Observed exit code: `2` (was `0` before this revision).
+
+## Revised tally
+
+| Run | Cases | Pass | Fail | Exit |
+|---|---|---|---|---|
+| `run-gate-tests.sh` (full suite, includes drift check) | 49 fixture cases + drift check | 49 | 0 | 0 |
+| `directive-drift-check.sh` (standalone) | 3 divergence checks, 4 undeclared reports | n/a | 0 | 0 |
+| Hunt reproduction, re-verifying -> reproducing, no target.md | 1 manual repro | — | — | 2 (refused, was 0) |

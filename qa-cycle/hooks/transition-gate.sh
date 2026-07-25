@@ -150,7 +150,7 @@ TABLE = [
     {"from": "reproduced", "to": "wont-fix", "actor": "human", "requires": ["token"]},
     {"from": "handed-off", "to": "re-verifying", "actor": "human", "requires": ["token"]},
     {"from": "re-verifying", "to": "verified-fixed", "actor": "agent", "requires": []},
-    {"from": "re-verifying", "to": "reproducing", "actor": "agent", "requires": []},
+    {"from": "re-verifying", "to": "reproducing", "actor": "agent", "requires": ["target"]},
 ]
 
 # `priority` and `severity` are fields, not transitions — they sit beside
@@ -491,13 +491,15 @@ if state_change_for_item is not None:
     # currently exactly reproducing -> reproduced — see docs/specs/
     # qa-cycle-state-machine.md "Severity and priority".
     # target precondition: an item cannot enter `reproducing` without a
-    # valid target declaration already on disk for this project. Declared
-    # via "target" in the row's own `requires`, the same mechanism
-    # `severity` uses on reproducing -> reproduced — see docs/specs/
-    # qa-cycle-state-machine.md "Target declaration". target.md is
-    # agent-writable; this gate holds the transition to the declaration's
-    # *content* (a valid, non-empty entry_point and label), not to who
-    # wrote it.
+    # valid target declaration already on disk for this project. This
+    # attaches to the DESTINATION state, not to one row: every row in TABLE
+    # whose `to` is "reproducing" declares "target" in its own `requires`
+    # (currently observed -> reproducing and re-verifying -> reproducing),
+    # the same generic per-row mechanism `severity` uses on
+    # reproducing -> reproduced — see docs/specs/qa-cycle-state-machine.md
+    # "Target declaration". target.md is agent-writable; this gate holds
+    # the transition to the declaration's *content* (a valid, non-empty
+    # entry_point and label), not to who wrote it.
     if "target" in requires:
         # Same two-part path treatment every other gate-checked path in
         # this script gets: the project identifier was already allow-list
@@ -512,9 +514,9 @@ if state_change_for_item is not None:
 
         if not os.path.exists(target_path_real):
             refuse(
-                "qa-cycle: refused — item %s: observed -> reproducing requires a target declaration at %s and none "
+                "qa-cycle: refused — item %s: %s -> reproducing requires a target declaration at %s and none "
                 "is present. The agent writes target.md (label, entry_point, env_names — names only, never values) "
-                "before attempting this transition." % (item_id, target_path)
+                "before attempting this transition." % (item_id, cur, target_path)
             )
         try:
             with open(target_path_real, encoding="utf-8-sig") as fh:
@@ -555,7 +557,7 @@ if state_change_for_item is not None:
             refuse(
                 "qa-cycle: refused — item %s: the write's run-record evidence does not reference the declared "
                 "target (label %r or entry_point %r) from %s. Reference the declared target in this write's "
-                "evidence before attempting observed -> reproducing." % (item_id, target_label, target_entry_point, target_path)
+                "evidence before attempting %s -> reproducing." % (item_id, target_label, target_entry_point, target_path, cur)
             )
 
     if "severity" in requires:

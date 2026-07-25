@@ -737,6 +737,35 @@ payload="$(payload_write "${ws39}/projects/${slug}/state.md" "$(item_block_with_
 run_case "target-valid-declaration-allowed" 0 "$ws39" "$payload"
 cleanup_ws "$ws39"
 
+# =========================================================================
+# Case 40: re-verifying -> reproducing with no target.md declared at all
+#          -> expect refuse. The `target` precondition attaches to the
+#          `reproducing` DESTINATION state, so every row landing an item in
+#          `reproducing` carries it — not just observed -> reproducing.
+#          Exact reproduction from
+#          docs/reports/2026-08-05-hunt-target-declaration.md.
+# =========================================================================
+ws40="$(new_workspace)"
+slug="owner-repo"
+write_state "$ws40" "$slug" "$(item_block BUG-1 re-verifying)"
+payload="$(payload_write "${ws40}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "ran against staging")")"
+run_case "target-absent-refused-re-verifying-to-reproducing" 2 "$ws40" "$payload"
+cleanup_ws "$ws40"
+
+# =========================================================================
+# Case 41: re-verifying -> reproducing WITH a valid target declaration,
+#          referenced by the write's own run-record evidence -> expect
+#          allow. Companion to case 40: the same row must still be legally
+#          traversable once the precondition is satisfied.
+# =========================================================================
+ws41="$(new_workspace)"
+slug="owner-repo"
+write_state "$ws41" "$slug" "$(item_block BUG-1 re-verifying)"
+write_target "$ws41" "$slug" "staging" "http://localhost:3000" "API_KEY"
+payload="$(payload_write "${ws41}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "reproduced against http://localhost:3000")")"
+run_case "target-valid-declaration-allowed-re-verifying-to-reproducing" 0 "$ws41" "$payload"
+cleanup_ws "$ws41"
+
 # --- tally -------------------------------------------------------------------
 
 echo ""
