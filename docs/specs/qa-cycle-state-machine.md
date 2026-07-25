@@ -13,6 +13,7 @@ The prior revision of this spec tracked one `phase` per project. That axis does 
 
 ## States
 
+- `(none)` — pre-existence marker: no record of this item id exists yet. Not a state any item record ever carries; it appears only as the `From` of the bootstrap transition below.
 - `observed` — an observation exists; not yet reproduced.
 - `reproducing` — an attempt to reproduce it is underway.
 - `reproduced` — reproduced with a recorded procedure; awaiting the human's is-this-a-defect verdict.
@@ -27,6 +28,7 @@ The prior revision of this spec tracked one `phase` per project. That axis does 
 
 | From | To | Trigger | Required evidence | Actor |
 |---|---|---|---|---|
+| `(none)` | `observed` | agent creates the first record of a new item | the observation text | agent |
 | `observed` | `reproducing` | agent begins reproduction | the observation text | agent |
 | `reproducing` | `reproduced` | reproduction succeeded | the reproduction procedure, recorded on the item | agent |
 | `reproducing` | `observed` | information insufficient to attempt | what was missing | agent |
@@ -39,11 +41,11 @@ The prior revision of this spec tracked one `phase` per project. That axis does 
 | `re-verifying` | `verified-fixed` | re-run of the recorded procedure no longer shows the problem | the re-run result | agent |
 | `re-verifying` | `reproducing` | re-run still shows the problem | the re-run result | agent |
 
-This table is exhaustive: no other transition is legal. The graph is non-linear by design — `reproducing → observed`, `reproducing → parked-unreproducible`, `parked-unreproducible → observed`, and `re-verifying → reproducing` are backward edges, and they are normal transitions, not error paths.
+This table has 12 rows and is exhaustive: no other transition is legal. `(none)` is not a state an item ever records — it is the pre-existence marker for "this item id has no prior block" and only ever appears as a `From`. The graph is non-linear by design — `reproducing → observed`, `reproducing → parked-unreproducible`, `parked-unreproducible → observed`, and `re-verifying → reproducing` are backward edges, and they are normal transitions, not error paths.
 
 ## Human decision points
 
-Human-locked transitions are exactly the four rows marked `Actor: human` above:
+Item creation is NOT human-locked: an agent brings a new feedback item into existence unaided, writing the first record itself on `(none) → observed` with no human trigger required. Human-locked transitions are exactly the four rows marked `Actor: human` above:
 
 - **`reproduced → handed-off`** — is this a genuine defect, and is it now being handed to the coding agent. Evidence: a verdict token bound to this item and this transition, plus the reproduction procedure the coding agent will work from.
 - **`reproduced → not-a-defect`** — the human declines to call the observation a defect. Evidence: a verdict token bound to this item and this transition.
