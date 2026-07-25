@@ -35,3 +35,24 @@ The gate refuses even though a human already ran `/go-no-go` and supplied the ve
 
 ### Expected
 The proposal's own "How I will know it worked" requires both: agent-initiated human-only transitions refused, AND signoff able to actually record a Go/No-Go verdict a human gave. As written, satisfying the first guarantee makes the second impossible — the proposal needs to specify how the gate recognizes a signoff-mediated write as distinct from an agent's unsupervised attempt (e.g., a separate tool identity, a token in tool_input signoff writes and the gate is allowed to trust, or the gate being scoped to only qa-cycle's own writer and signoff bypassing it entirely), and it does not.
+
+## before-landing — stance 2: assume this guard goes silent when its own input is malformed — make it go silent
+
+Verdict: FINDING — malformed (non-JSON) PreToolUse payload makes transition-gate.sh silently `allow()` instead of refusing, contradicting its own "Fails closed" contract.
+Kind: silent-failure
+Seed: qa-cycle/hooks/transition-gate.sh (PreToolUse blocking gate)
+
+### Reproduce
+```
+mkdir -p /tmp/qa-ws/projects/foo-bar
+printf -- '---\nphase: intake-scoping\n---\n' > /tmp/qa-ws/projects/foo-bar/state.md
+export QA_WORKSPACE=/tmp/qa-ws
+echo 'not json at all {{{' | bash qa-cycle/hooks/transition-gate.sh
+echo "EXIT:$?"
+```
+
+### Observed
+`EXIT:0` — the hook allows the tool call through with no stderr message at all, silently, because `json.loads` raising `ValueError` on malformed payload hits `except ValueError: allow()` (line ~54 of the embedded python), which exits 0 unconditionally instead of refusing.
+
+### Expected
+Per the header comment ("Fails closed: unreadable/missing/malformed state or token, or an unset QA_WORKSPACE, all refuse (exit 2) rather than allow.") and per the general PreToolUse-gate design, a malformed hook payload — the gate's own primary input — should cause `refuse()` (exit 2), not `allow()`. As written, any caller (or a bug in Claude Code's hook invocation, or an attacker who can influence the JSON stdin) that sends non-JSON on stdin bypasses the entire transition gate silently, permitting illegal phase transitions and token-required writes (e.g. jumping straight to `Go`/`No-Go`) with no message logged.
