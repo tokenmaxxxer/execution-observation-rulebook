@@ -1,5 +1,5 @@
 ---
-status: approved
+status: landed
 issue: "#8"
 files:
   - qa-cycle/hooks/tests/run-gate-tests.sh
