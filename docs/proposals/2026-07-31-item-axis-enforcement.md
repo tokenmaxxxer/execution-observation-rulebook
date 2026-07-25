@@ -8,6 +8,7 @@ files:
   - qa-cycle/hooks/tests/run-gate-tests.sh
   - qa-cycle/hooks/tests/README.md
   - docs/handbooks/qa-cycle.md
+  - qa-cycle/hooks/report-phase.sh
 ---
 
 # Re-axe enforcement onto item state
@@ -80,6 +81,15 @@ touches.
 - Update `docs/handbooks/qa-cycle.md` to describe the new per-item state
   file shape and the new item-and-transition-bound token shape, replacing
   the current project-`phase`/project-scoped-token description throughout.
+- Update `qa-cycle/hooks/report-phase.sh` — the SessionStart hook
+  registered in `qa-cycle/hooks/hooks.json` — to read the new per-item
+  `state.md` shape and report items by state at session start, instead of
+  reading a single top-level project `phase` field. This file was added to
+  the write set because `docs/reports/2026-07-31-hunt-item-axis-enforcement.md`
+  found that, unrevised, it would read the old single-`phase:` field
+  against the new per-item `state.md`, find nothing, and silently report
+  zero projects in flight — exit 0, no error — even while items are stuck
+  mid-cycle.
 
 ## Out of scope
 
