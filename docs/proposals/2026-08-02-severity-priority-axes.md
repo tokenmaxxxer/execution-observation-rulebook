@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: landed
 files:
   - docs/specs/qa-cycle-state-machine.md
   - docs/handbooks/qa-cycle.md
@@ -58,3 +58,9 @@ Required-for-transition question, settled: **severity is required to reach `repr
 ## How we'll know it worked
 
 `state.md` item blocks carry `severity:` and `priority:` fields with closed-set values enforced by `transition-gate.sh`; an attempted `reproducing → reproduced` write with empty `severity` is refused; an agent-attempted `priority` change with no matching unconsumed `(item id, field, value)` token present is refused, including when the write also contains a self-authored `priority-set-by: human` marker (the marker alone must not be sufficient — this is the exact case `docs/reports/2026-08-02-hunt-severity-priority-axes.md` found broken in the original design); a `priority` change backed by a token minted from an explicit human verdict via `capture-verdict.sh` is allowed and consumes the token; `qa-cycle/hooks/tests/run-gate-tests.sh` gains cases for both refusals plus one allow case per field; `report-phase.sh`'s output shows severity and priority per item, sorted by severity, on a workspace with two or more items in flight.
+
+## What did not work
+
+- The original single-`priority-set-by: human`-marker mechanism (see "Why the original mechanism was wrong," above) — replaced with the token mechanism per the hunt finding, before implementation began.
+- The gate's existing "a write changes exactly one item's state" ambiguity check assumed state was the only axis a write could change. Priority changes needed to be detected and bounded the same way even when no state changes at all, so the check was generalized to "a write touches exactly one item, on either the state axis or the priority axis" rather than being layered on top unchanged.
+- `report-phase.sh`'s original per-project grouping (by state) was replaced outright with grouping by `(priority, severity)`, rather than being added alongside it — the proposal's "how we'll know it worked" says "sorted by severity" but the intent section says priority is the primary ordering with severity secondary; the implementation follows the intent section (priority primary) since that's what answers "what to look at first."
