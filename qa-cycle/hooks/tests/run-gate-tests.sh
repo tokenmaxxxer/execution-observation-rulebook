@@ -766,6 +766,71 @@ payload="$(payload_write "${ws41}/projects/${slug}/state.md" "$(item_block_with_
 run_case "target-valid-declaration-allowed-re-verifying-to-reproducing" 0 "$ws41" "$payload"
 cleanup_ws "$ws41"
 
+# =========================================================================
+# Case 42: target.md contains a SECOND `---` block, but only once padding
+#          pushes it past the gate's 64KB read cap -> expect refuse. Exact
+#          reproduction of the before-landing hunt finding in
+#          docs/reports/2026-08-05-hunt-target-declaration.md: a truncated
+#          read must never turn a genuinely ambiguous (two-block) file into
+#          an apparently well-formed one. Before the fix this observed
+#          allow (exit 0); it must now refuse.
+# =========================================================================
+ws42="$(new_workspace)"
+slug="owner-repo"
+write_state "$ws42" "$slug" "$(item_block BUG-1 observed)"
+mkdir -p "${ws42}/projects/${slug}"
+python3 - "${ws42}/projects/${slug}/target.md" <<'PY'
+import sys
+path = sys.argv[1]
+pad = "x" * 70000
+content = ("---\nlabel: staging\nentry_point: http://localhost:3000\n---\n"
+           + pad + "\n---\nlabel: decoy\nentry_point: decoy\n---\n")
+with open(path, "w") as fh:
+    fh.write(content)
+PY
+payload="$(payload_write "${ws42}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "reproduced against http://localhost:3000")")"
+run_case "target-second-block-past-cap-refused" 2 "$ws42" "$payload"
+cleanup_ws "$ws42"
+
+# =========================================================================
+# Case 43: target.md is otherwise well-formed (single block, valid label
+#          and entry_point) but the file itself exceeds the gate's 64KB
+#          read cap (e.g. a huge trailing comment/padding inside the same
+#          block) -> expect refuse. An oversized declaration is an
+#          unadjudicable input regardless of whether padding happens to
+#          fall inside or outside the one block the gate can see.
+# =========================================================================
+ws43="$(new_workspace)"
+slug="owner-repo"
+write_state "$ws43" "$slug" "$(item_block BUG-1 observed)"
+mkdir -p "${ws43}/projects/${slug}"
+python3 - "${ws43}/projects/${slug}/target.md" <<'PY'
+import sys
+path = sys.argv[1]
+pad = "x" * 70000
+content = "---\nlabel: staging\nentry_point: http://localhost:3000\nenv_names: %s\n---\n" % pad
+with open(path, "w") as fh:
+    fh.write(content)
+PY
+payload="$(payload_write "${ws43}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "reproduced against http://localhost:3000")")"
+run_case "target-oversized-otherwise-valid-refused" 2 "$ws43" "$payload"
+cleanup_ws "$ws43"
+
+# =========================================================================
+# Case 44: a normal, well within the cap, valid target declaration must
+#          still be allowed -> the cap+1 probe read must not disturb the
+#          ordinary allow path. Companion to case 39, added alongside the
+#          cap-boundary cases so the boundary fix is proven not to regress
+#          the common case in the same block of the file.
+# =========================================================================
+ws44="$(new_workspace)"
+slug="owner-repo"
+write_state "$ws44" "$slug" "$(item_block BUG-1 observed)"
+write_target "$ws44" "$slug" "staging" "http://localhost:3000" "API_KEY"
+payload="$(payload_write "${ws44}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "reproduced against http://localhost:3000")")"
+run_case "target-normal-valid-declaration-still-allowed" 0 "$ws44" "$payload"
+cleanup_ws "$ws44"
+
 # --- tally -------------------------------------------------------------------
 
 echo ""

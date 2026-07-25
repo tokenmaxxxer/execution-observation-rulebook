@@ -393,11 +393,25 @@ def item_priority_from_text(text, item_id):
 def current_state_text():
     if not os.path.exists(state_path):
         return ""
+    # A truncated read is never a verdict: this gate judges structure
+    # (block count, item/state pairs) over the *whole* file, so a cap that
+    # silently drops the tail could make an ambiguous file (e.g. two blocks
+    # for the same item, the second past the cap) look well-formed. Read one
+    # byte past the cap; if that extra byte materializes, the file exceeds
+    # what this gate can adjudicate and it refuses rather than guessing from
+    # a prefix.
+    cap = 1 << 20
     try:
         with open(state_path, encoding="utf-8-sig") as fh:
-            return fh.read(1 << 20)
+            text = fh.read(cap + 1)
     except (OSError, UnicodeDecodeError):
         refuse("qa-cycle: refused — %s exists but could not be read. Fix or remove it before attempting a transition." % state_path)
+    if len(text) > cap:
+        refuse(
+            "qa-cycle: refused — %s exceeds the %d-byte cap this gate reads. An oversized state file is an "
+            "unadjudicable input; refusing rather than judging structure from a truncated prefix." % (state_path, cap)
+        )
+    return text
 
 
 def attempted_content():
@@ -518,11 +532,24 @@ if state_change_for_item is not None:
                 "is present. The agent writes target.md (label, entry_point, env_names — names only, never values) "
                 "before attempting this transition." % (item_id, cur, target_path)
             )
+        # A truncated read is never a verdict: block count (len == 1) is
+        # judged over the whole file, never a prefix — a second `---` block
+        # that falls past a silent cap must not be able to flip an
+        # ambiguous, refuse-worthy file into a well-formed one. Read one
+        # byte past the cap; if that extra byte materializes, the
+        # declaration exceeds what this gate can adjudicate and it refuses.
+        target_cap = 1 << 16
         try:
             with open(target_path_real, encoding="utf-8-sig") as fh:
-                target_text = fh.read(1 << 16)
+                target_text = fh.read(target_cap + 1)
         except (OSError, UnicodeDecodeError):
             refuse("qa-cycle: refused — item %s: %s exists but could not be read. Refusing rather than allowing a transition this gate cannot verify." % (item_id, target_path))
+        if len(target_text) > target_cap:
+            refuse(
+                "qa-cycle: refused — item %s: %s exceeds the %d-byte cap this gate reads. An oversized "
+                "declaration is an unadjudicable input; refusing rather than judging block structure from a "
+                "truncated prefix." % (item_id, target_path, target_cap)
+            )
 
         target_blocks = parse_blocks(target_text)
         if len(target_blocks) != 1:
