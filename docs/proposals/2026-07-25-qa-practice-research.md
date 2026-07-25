@@ -1,5 +1,5 @@
 ---
-status: approved
+status: landed
 issue: "#1"
 files:
   - docs/reports/research/2026-07-25-qa-practice-landscape.md
