@@ -118,6 +118,59 @@ prose rather than asking for a fixture that proves a negative.)
 | Drift 2 (bugreport priority actor) | 1 | 0 | 1 | 1 |
 | Drift 3 (signoff declared-but-unclaimed) | 1 | 0 | 1 | 1 |
 
+## Revision run — `--dump-facts` bypass fix
+
+A before-landing warrant hunt (`docs/reports/2026-08-04-hunt-directive-drift-check.md`,
+"before-landing — stance 0") reproduced a real bypass: `transition-gate.sh
+--dump-facts` exited 0 unconditionally on `$1 == "--dump-facts"`, ignoring
+whatever hook payload was on stdin. A `handed-off -> re-verifying` write
+(token-gated, human-only, no token present) piped alongside `--dump-facts`
+was silently allowed instead of refused.
+
+Fix, in `qa-cycle/hooks/transition-gate.sh`:
+
+- Argument handling is now exact-match and total: zero arguments is the
+  normal adjudication path; exactly one argument, the literal
+  `--dump-facts`, is the diagnostic path; anything else (a second argument,
+  an unrecognized flag, `--dump-facts` alongside another argument) refuses
+  (exit 2) rather than falling through to normal operation.
+- `--dump-facts` now peeks for a real byte on stdin (a short-timeout,
+  single-byte `read`) before dumping. `read -t 0` alone was tried first and
+  rejected: it cannot distinguish "a payload is waiting" from "stdin is
+  already at EOF," since both report as immediately readable. The
+  single-byte peek only ever runs on the `--dump-facts` path, which reads
+  no payload either way, so the normal path's single `cat` of stdin is
+  untouched.
+- No other argument path existed in the gate to audit — `$1` was the only
+  branch point on argv before this fix, and it is now the only one after.
+
+Harness cases added to `qa-cycle/hooks/tests/run-gate-tests.sh` (cases
+31–34): the hunt's exact reproduction (`--dump-facts` with the
+`handed-off -> re-verifying` payload on stdin, no token — now refuses);
+`--dump-facts` with a second argument (refuses); an unrecognized flag alone
+(refuses); `--dump-facts` standalone with no stdin payload (still allows
+and still emits the facts).
+
+Run:
+
+```
+bash qa-cycle/hooks/tests/run-gate-tests.sh
+```
+
+Tally: `42 passed, 0 failed (of 42 cases)`. `directive-drift-check.sh`
+(invoked as the harness's final step, same clean tree): passed, exit 0.
+
+The hunt's reproduction, re-run standalone after the fix:
+
+```
+printf '%s' "$payload" | QA_WORKSPACE="$WS" bash qa-cycle/hooks/transition-gate.sh --dump-facts
+echo "exit=$?"
+```
+
+now refuses with `exit=2` (observed), where the payload is the same
+`handed-off -> re-verifying`, no-token write from the hunt record — instead
+of the prior silent `exit=0` allow.
+
 ## What this check does not cover
 
 Stated plainly, matching the proposal's own scope line: this check

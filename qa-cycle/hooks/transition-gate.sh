@@ -44,9 +44,44 @@ command -v python3 >/dev/null 2>&1 || { echo "qa-cycle: python3 not found; refus
 # reads no stdin — it is not reachable from, and shares no code path with,
 # any write decision. See qa-cycle/hooks/tests/directive-drift-check.sh,
 # which is the only consumer.
+#
+# Argument handling is exact-match and total, the same refuse-by-default
+# rule as the rest of this gate: the only two legal invocation shapes are
+# zero arguments (the normal adjudication path) and exactly one argument
+# that is the literal string "--dump-facts" (the diagnostic path). Any
+# other argument, any extra argument alongside "--dump-facts", or any
+# unrecognized flag is a refusal — never a silent fall-through to normal
+# operation, and never a silent ignore.
 dump_facts=0
-if [ "${1:-}" = "--dump-facts" ]; then
+if [ $# -eq 0 ]; then
+  dump_facts=0
+elif [ $# -eq 1 ] && [ "$1" = "--dump-facts" ]; then
   dump_facts=1
+else
+  echo "qa-cycle: refused — unrecognized arguments to transition-gate.sh. The only supported invocations are with no arguments (adjudicate a hook payload on stdin) or exactly \`--dump-facts\` alone (read-only diagnostic dump). Refusing rather than falling through to normal operation on an unrecognized argument shape." >&2
+  exit 2
+fi
+
+# A caller with a hook payload to adjudicate is not making a diagnostic
+# call. If stdin has data available, --dump-facts refuses rather than
+# dumping — this is exactly the bypass a payload carrying --dump-facts as
+# $1 would otherwise get: skipping adjudication entirely.
+#
+# `read -t 0` alone cannot tell "a payload is waiting" apart from "stdin is
+# already at EOF" — both report as immediately readable, since consuming an
+# EOF is itself instantaneous. So this peeks at most one real byte with a
+# short timeout instead: if a byte arrives, a payload is present and this
+# refuses; if the timeout elapses (an interactive terminal with nothing
+# typed yet) or stdin is already at EOF (nothing was piped), no payload is
+# present and the dump proceeds. This consumes up to one byte of stdin, but
+# only on the --dump-facts path, which never reads a payload anyway — the
+# normal adjudication path below is untouched and still reads its payload
+# with a single `cat` exactly as it does today.
+if [ "$dump_facts" = 1 ]; then
+  if IFS= read -r -t 0.1 -n 1 _dump_facts_stdin_peek; then
+    echo "qa-cycle: refused — --dump-facts was invoked with a hook payload present on stdin. --dump-facts is a read-only diagnostic path reachable only as a deliberate, standalone invocation; it never adjudicates a payload. Refusing rather than treating this as a diagnostic call." >&2
+    exit 2
+  fi
 fi
 
 if [ "$dump_facts" != 1 ]; then

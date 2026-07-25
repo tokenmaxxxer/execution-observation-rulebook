@@ -159,6 +159,47 @@ run_case() {
   echo "case: ${name} | expected: ${expected} | observed: ${rc} | ${status}${msg_note}"
 }
 
+run_case_argv() {
+  # run_case_argv <name> <expected_exit> <ws-or-empty> <payload-or-empty> -- <gate-arg...>
+  # Like run_case, but invokes the gate with explicit argv instead of none.
+  # Used for the --dump-facts argument-handling and stdin-detection cases,
+  # which need to control both argv and stdin independently.
+  local name="$1" expected="$2" ws="$3" payload="$4"
+  shift 4
+  if [ "${1:-}" = "--" ]; then shift; fi
+  local gate_args=("$@")
+
+  local out err rc
+  local env_args=()
+  if [ -n "$ws" ]; then
+    env_args+=("QA_WORKSPACE=${ws}")
+  fi
+
+  set +e
+  err="$(printf '%s' "$payload" | env "${env_args[@]}" "$GATE" "${gate_args[@]}" 2>&1 1>/tmp/gate-test-stdout.$$)"
+  rc=$?
+  set -e
+  rm -f "/tmp/gate-test-stdout.$$"
+
+  local status="ok" msg_note=""
+  if [ "$rc" -ne "$expected" ]; then
+    status="FAIL"
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+  else
+    PASS_COUNT=$((PASS_COUNT + 1))
+  fi
+
+  if [ "$expected" -ne 0 ]; then
+    if [ -z "$err" ]; then
+      status="FAIL"
+      msg_note=" (refusal message was empty)"
+    fi
+  fi
+
+  RESULTS+=("${name}|${expected}|${rc}|${status}${msg_note}")
+  echo "case: ${name} | expected: ${expected} | observed: ${rc} | ${status}${msg_note}"
+}
+
 expect_file() {
   # expect_file <name> <path> <exists|absent>
   local name="$1" path="$2" want="$3"
@@ -573,6 +614,34 @@ run_case "priority-consumption-timing-first-allow-write-does-not-land" 0 "$ws30"
 payload="$(payload_write "${ws30}/projects/${slug}/state.md" "$(item_block_with_priority BUG-1 reproduced now)")"
 run_case "priority-consumption-timing-retry-still-allowed" 0 "$ws30" "$payload"
 cleanup_ws "$ws30"
+
+# =========================================================================
+# Case 31: --dump-facts with a token-gated human-only transition payload on
+#          stdin (the hunt's exact reproduction: handed-off -> re-verifying,
+#          no token present) -> expect refuse, not the JSON dump/allow.
+# =========================================================================
+ws31="$(new_workspace)"
+slug="owner-repo"
+write_state "$ws31" "$slug" "$(item_block BUG-1 handed-off)"
+payload="$(payload_write "${ws31}/projects/${slug}/state.md" "$(item_block BUG-1 re-verifying)")"
+run_case_argv "dump-facts-with-stdin-payload-refuses-hunt-repro" 2 "$ws31" "$payload" -- --dump-facts
+cleanup_ws "$ws31"
+
+# =========================================================================
+# Case 32: --dump-facts with a second argument -> expect refuse
+# =========================================================================
+run_case_argv "dump-facts-with-extra-argument-refuses" 2 "" "" -- --dump-facts extra-arg
+
+# =========================================================================
+# Case 33: an unrecognized flag alone -> expect refuse
+# =========================================================================
+run_case_argv "unrecognized-flag-alone-refuses" 2 "" "" -- --bogus-flag
+
+# =========================================================================
+# Case 34: --dump-facts as a standalone call with no stdin payload
+#          -> expect allow and still emits the facts (no argv, no ws needed)
+# =========================================================================
+run_case_argv "dump-facts-standalone-no-stdin-allows" 0 "" "" -- --dump-facts
 
 # --- tally -------------------------------------------------------------------
 
