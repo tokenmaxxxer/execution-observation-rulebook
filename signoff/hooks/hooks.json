@@ -1,18 +1,12 @@
 {
   "hooks": {
-    "SessionStart": [
+    "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/capture-verdict.sh"
+          },
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/directive.sh"
