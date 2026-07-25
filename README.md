@@ -111,10 +111,12 @@ plus folder trust), commit this to that repo's `.claude/settings.json`:
 
 ## Handoff protocol
 
-Excerpted from the shared `docs/specs/role-handoff-contract.md` (root
-`tokenmaxxxer` repo) at `2affe5db7dfb285abaa2860d3004edb3f97c9aec` — qa's
-rows only. `qa-cycle/hooks/transition-gate.sh` refuses to proceed when this
-pinned SHA no longer matches that file's current SHA in the target repo.
+The authoritative contract is the work repo's own
+`docs/specs/role-handoff-contract.md` — not a copy pinned to any SHA in this
+or any other repo. This section describes only how the qa role behaves
+against whatever contract the work repo carries; `qa-cycle/hooks/transition-gate.sh`
+resolves that repo's git root and refuses handoff-protocol actions if that
+file is absent there, rather than proceeding without one.
 
 **ACCEPTS.** None. qa works from direct observation of the running system,
 not from other roles' records. It uniformly refuses `hypothesis`,

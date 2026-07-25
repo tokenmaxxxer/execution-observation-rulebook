@@ -38,27 +38,24 @@ esac
 
 command -v python3 >/dev/null 2>&1 || { echo "qa-cycle: python3 not found; refusing rather than allowing an unchecked write." >&2; exit 2; }
 
-# --- role-handoff-contract SHA pin -----------------------------------------
-# README.md's "Handoff protocol" section excerpts docs/specs/role-handoff-
-# contract.md (root tokenmaxxxer repo) at a pinned SHA. This applies the
-# contract's own staleness mechanism (its section 4) to the contract itself:
-# if the contract has moved since the excerpt was written, the excerpt may
-# no longer say what the contract says, so this gate refuses rather than
-# adjudicating against a possibly-stale copy. Only checked when the target
-# repo actually has that file under version control; a repo with no such
-# path (or no git repo at all) has nothing to be stale against, so this
-# check is silently not-applicable there, the same as every other
-# not-applicable path in this gate.
-PINNED_CONTRACT_SHA="2affe5db7dfb285abaa2860d3004edb3f97c9aec"
-if command -v git >/dev/null 2>&1 && git rev-parse --show-toplevel >/dev/null 2>&1; then
-  _contract_repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-  if [ -n "$_contract_repo_root" ] && [ -f "$_contract_repo_root/docs/specs/role-handoff-contract.md" ]; then
-    _current_contract_sha="$(git -C "$_contract_repo_root" log -1 --format=%H -- docs/specs/role-handoff-contract.md 2>/dev/null || true)"
-    if [ -n "$_current_contract_sha" ] && [ "$_current_contract_sha" != "$PINNED_CONTRACT_SHA" ]; then
-      echo "qa-cycle: refused — README.md's Handoff protocol section is pinned to docs/specs/role-handoff-contract.md at $PINNED_CONTRACT_SHA, but that file is now at $_current_contract_sha. Refusing rather than adjudicating against a possibly-stale excerpt of the shared contract. Re-excerpt README.md's Handoff protocol section against the current contract and update the pinned SHA before proceeding." >&2
-      exit 2
-    fi
-  fi
+# --- repo-local role-handoff contract ---------------------------------------
+# The handoff contract holds only within a single git repository. This gate
+# resolves exactly one root — the git root of the current working
+# directory — and looks for docs/specs/role-handoff-contract.md inside that
+# root only. No parent-directory walk, no reference to any sibling repo, no
+# comparison against another repo's git history or SHA: this rulebook is a
+# plugin installed into a work repo, and the only contract that can bind a
+# handoff-protocol action is the one that repo itself carries. Absence of
+# that file is an honest refusal, not a silent pass — see
+# docs/proposals/2026-07-26-repo-local-contract.md.
+if ! command -v git >/dev/null 2>&1 || ! git rev-parse --show-toplevel >/dev/null 2>&1; then
+  echo "qa-cycle: refused — this repo has no collaboration contract yet (not inside a git repository, so no root to resolve docs/specs/role-handoff-contract.md against). Refusing handoff-protocol actions rather than proceeding without one." >&2
+  exit 2
+fi
+_contract_repo_root="$(git rev-parse --show-toplevel)"
+if [ ! -f "$_contract_repo_root/docs/specs/role-handoff-contract.md" ]; then
+  echo "qa-cycle: refused — this repo has no collaboration contract yet (no docs/specs/role-handoff-contract.md at $_contract_repo_root). Refusing handoff-protocol actions rather than proceeding without one." >&2
+  exit 2
 fi
 
 # --dump-facts is a read-only introspection path: it prints the same
