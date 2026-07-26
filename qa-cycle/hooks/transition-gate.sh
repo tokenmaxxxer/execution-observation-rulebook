@@ -293,32 +293,157 @@ elif tool == "Bash":
     _bash_records_root = (_repo_root_for_bash_real + "/docs/reports/records") if _repo_root_for_bash_real else ""
 
     _bash_hits_records_tree = False
+    _bash_hit_tok = None
     for _tok in _bash_tokens:
         _tok_norm = _tok.replace("\\", "/")
         _tok_abs = posixpath.normpath(_tok_norm if posixpath.isabs(_tok_norm) else posixpath.join(os.getcwd(), _tok_norm))
         if _bash_records_root and (_tok_abs == _bash_records_root or _tok_abs.startswith(_bash_records_root + "/")):
             _bash_hits_records_tree = True
+            _bash_hit_tok = _tok_norm
             break
         # Also treat a bare relative reference to the tree (not resolvable
         # to an absolute path from cwd alone, e.g. embedded in a larger
         # expression) as a hit — conservative on purpose.
         if "docs/reports/records/" in _tok_norm:
             _bash_hits_records_tree = True
+            _bash_hit_tok = _tok_norm
             break
 
-    if _bash_hits_records_tree:
+    if not _bash_hits_records_tree:
+        # No reference to the owned record tree found anywhere in the
+        # command: this gate has nothing further to say about it (it may
+        # still be a write, just not one to a path this gate governs).
+        not_applicable()
+
+    # --- path-reference default-deny (contract: docs/proposals/2026-07-26-gate-nested-shell-default-deny.md) ---
+    # A Bash command that references a path inside the owned record tree —
+    # whether it names qa's own record or another role's — is DEFAULT-DENIED
+    # unless the reference can be *proven* read-only: read-only-shaped
+    # commands only, no shell nesting (sh -c/bash -c/eval), no command
+    # substitution ($( )/backtick), and no write idiom anywhere in the
+    # command. This is a strictly stronger bar than idiom-matching: the
+    # write-idiom list below is one trigger for "cannot prove read-only",
+    # not the exhaustive definition of a write.
+    WRITE_IDIOM_RE = re.compile(
+        r"open\s*\([^)]*,\s*['\"]?[wax]"
+        r"|\.write\s*\("
+        r"|\.write_text\s*\("
+        r"|\.write_bytes\s*\("
+        r"|os\.write\s*\("
+        r"|(?<![0-9&])>{1,2}(?![&|])"
+        r"|\btee\b"
+        r"|\bdd\b"
+    )
+    NESTED_SHELL_RE = re.compile(r"\b(?:sh|bash)\s+-c\b|\beval\b")
+    READ_ONLY_CMDS = {
+        "cat", "grep", "egrep", "fgrep", "head", "tail", "test", "ls", "[",
+        "wc", "find", "stat", "file", "sort", "uniq", "cut", "diff",
+        "md5sum", "sha256sum",
+    }
+
+    def _command_substitution_free(cmd):
+        return "$(" not in cmd and "`" not in cmd
+
+    def _no_nested_shell(cmd):
+        return NESTED_SHELL_RE.search(cmd) is None
+
+    def _no_write_idiom(cmd):
+        return WRITE_IDIOM_RE.search(cmd) is None
+
+    def _only_read_commands(cmd):
+        for seg in re.split(r"[;\n]|&&|\|\|", cmd):
+            for part in seg.split("|"):
+                part = part.strip()
+                if not part:
+                    continue
+                words = part.split()
+                if not words:
+                    continue
+                first = words[0]
+                # skip leading VAR=value assignments
+                idx = 0
+                while idx < len(words) and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[idx]):
+                    idx += 1
+                if idx >= len(words):
+                    continue
+                first = words[idx].rstrip("()")
+                if first not in READ_ONLY_CMDS:
+                    return False
+        return True
+
+    def _proven_read_only(cmd):
+        return (
+            _command_substitution_free(cmd)
+            and _no_nested_shell(cmd)
+            and _no_write_idiom(cmd)
+            and _only_read_commands(cmd)
+        )
+
+    if _proven_read_only(command):
+        # Read-only proven: this reference to the record tree is not a
+        # write this gate governs.
+        not_applicable()
+
+    # Not proven read-only. The one narrow carve-out: a PLAIN redirection
+    # (>, >>) — no shell nesting, no command substitution, no other write
+    # idiom mixed in — targeting qa's OWN record path is still adjudicated
+    # as a possible legal state transition, exactly as a Write/Edit to that
+    # same path would be (contract: "자기 레코드 평이 리다이렉션 write가
+    # 합법 상태전이면 여전히 허용"). Everything else — any foreign-role
+    # reference, or any self reference that is not a plain redirection —
+    # is refused outright.
+    _hit_norm = (_bash_hit_tok or "").replace("\\", "/")
+    _own_hit = False
+    _m_owner = re.search(r"docs/reports/records/([^/\s'\"]+)/([^\s'\"]+)", _hit_norm)
+    if _m_owner:
+        _hit_subject, _hit_rest = _m_owner.group(1), _m_owner.group(2)
+        _own_hit = _hit_rest == "qa.md" or _hit_rest.startswith("qa/")
+
+    _plain_redirect_only = (
+        _command_substitution_free(command)
+        and _no_nested_shell(command)
+        and re.search(r"(?<![0-9&])>{1,2}(?![&|])", command) is not None
+        and re.search(
+            r"open\s*\([^)]*,\s*['\"]?[wax]|\.write\s*\(|\.write_text\s*\(|\.write_bytes\s*\(|os\.write\s*\(|\btee\b|\bdd\b",
+            command,
+        ) is None
+    )
+
+    if not (_own_hit and _plain_redirect_only):
         refuse(
             "qa-cycle: refused — a Bash command references the owned record tree "
-            "(docs/reports/records/) as a write target. A Bash call's write target and "
-            "content cannot be confirmed the way a Write/Edit call's can; default-deny "
-            "applies to any Bash write whose target is, or cannot be excluded from being, "
-            "inside that tree (contract: write-target resolution is by target path, not "
-            "tool name)."
+            "(docs/reports/records/) at %r and this reference cannot be proven read-only "
+            "(no shell nesting, no command substitution, no write idiom). Path-reference "
+            "default-deny applies to any such reference, whether it names qa's own record "
+            "or another role's." % (_bash_hit_tok,)
         )
-    # No reference to the owned record tree found anywhere in the command:
-    # this gate has nothing further to say about it (it may still be a
-    # write, just not one to a path this gate governs).
-    not_applicable()
+
+    # Plain self-redirection: extract the redirection target and the
+    # content being written, and adjudicate it exactly as the Write/Edit
+    # path below adjudicates a qa.md write — same structural checks
+    # (kind:, DEPENDS-ON), never a second, looser code path.
+    _redir_m = re.search(r">{1,2}\s*(\S+)\s*$", command.strip())
+    if not _redir_m:
+        refuse("qa-cycle: refused — could not identify the redirection target in this command. Refusing rather than guessing.")
+    _redir_target_raw = _redir_m.group(1).strip("'\"")
+    _redir_target_norm = _redir_target_raw.replace("\\", "/")
+    _redir_target_abs = posixpath.normpath(_redir_target_norm if posixpath.isabs(_redir_target_norm) else posixpath.join(os.getcwd(), _redir_target_norm))
+    if not (_bash_records_root and (_redir_target_abs == _bash_records_root or _redir_target_abs.startswith(_bash_records_root + "/"))):
+        refuse("qa-cycle: refused — the redirection target does not resolve into the owned record tree the same way the matched reference did. Refusing rather than trusting a mismatch.")
+
+    _producer = command[:_redir_m.start()].strip()
+    _content_m = re.search(r"'((?:[^'\\]|\\.)*)'|\"((?:[^\"\\]|\\.)*)\"", _producer)
+    if not _content_m:
+        refuse("qa-cycle: refused — could not extract the literal content this redirection writes. Refusing rather than adjudicating unreadable content.")
+    _bash_content = _content_m.group(1) if _content_m.group(1) is not None else _content_m.group(2)
+    _bash_content = _bash_content.replace("\\n", "\n").replace("\\t", "\t").replace("\\'", "'").replace('\\"', '"')
+
+    tool_input = {"file_path": _redir_target_abs.replace(_repo_root_for_bash_real, _repo_root_for_bash, 1) if _repo_root_for_bash_real else _redir_target_abs, "content": _bash_content}
+    tool = "Write"
+    path = tool_input["file_path"]
+    # Falls through to the normal path-resolution and blackboard-record
+    # checks below, exactly as a Write call targeting this same path and
+    # content would.
 else:
     # Not a write-shaped tool call at all; this gate has nothing to say
     # about it. Distinct from the malformed-shape refusals above and below.

@@ -940,6 +940,52 @@ open(target, 'w').write('x')
 PYEOF")"
 run_case_in_repo_root "bash-indeterminate-target-in-records-tree-refused" 2 "" "$payload"
 
+# =========================================================================
+# Cases 48-54: path-reference default-deny (contract: docs/proposals/
+# 2026-07-26-gate-nested-shell-default-deny.md). A Bash command referencing
+# a path inside the owned record tree (docs/reports/records/<subject>/),
+# self or foreign, is default-denied unless provably read-only. Each write
+# idiom below targets a FOREIGN role's record slot -> expect refuse. A
+# plain self-redirection to qa's own record with a legal (bootstrap) write
+# is still allowed. All wrapped in sh -c/bash -c/eval or command
+# substitution are refused regardless of idiom.
+# =========================================================================
+foreign_record="${REPO_ROOT}/docs/reports/records/other-subject/coding.md"
+
+payload="$(payload_bash "python3 -c \"open('${foreign_record}', 'w').write('x')\"")"
+run_case_in_repo_root "path-ref-deny-foreign-open-write" 2 "" "$payload"
+
+payload="$(payload_bash "python3 -c \"import pathlib; pathlib.Path('${foreign_record}').write_text('x')\"")"
+run_case_in_repo_root "path-ref-deny-foreign-write-text" 2 "" "$payload"
+
+payload="$(payload_bash "python3 -c \"import pathlib; pathlib.Path('${foreign_record}').write_bytes(b'x')\"")"
+run_case_in_repo_root "path-ref-deny-foreign-write-bytes" 2 "" "$payload"
+
+payload="$(payload_bash "python3 -c \"import os; os.write(open('${foreign_record}','w').fileno(), b'x')\"")"
+run_case_in_repo_root "path-ref-deny-foreign-os-write" 2 "" "$payload"
+
+payload="$(payload_bash "sh -c \"cat ${foreign_record}\"")"
+run_case_in_repo_root "path-ref-deny-foreign-sh-c-wrap" 2 "" "$payload"
+
+payload="$(payload_bash "bash -c \"cat ${foreign_record}\"")"
+run_case_in_repo_root "path-ref-deny-foreign-bash-c-wrap" 2 "" "$payload"
+
+payload="$(payload_bash "eval \"cat ${foreign_record}\"")"
+run_case_in_repo_root "path-ref-deny-foreign-eval-wrap" 2 "" "$payload"
+
+payload="$(payload_bash "echo \"\$(cat ${foreign_record})\"")"
+run_case_in_repo_root "path-ref-deny-foreign-command-substitution-wrap" 2 "" "$payload"
+
+# Plain read of a foreign record (no write idiom, no nesting, no command
+# substitution, read-only command) -> not this gate's business -> allow.
+payload="$(payload_bash "cat ${foreign_record}")"
+run_case_in_repo_root "path-ref-allow-foreign-plain-read" 0 "" "$payload"
+
+# Own record, plain redirection, legal bootstrap write -> still allowed.
+own_bash_record="${REPO_ROOT}/docs/reports/records/own-subject-bash/qa.md"
+payload="$(payload_bash "printf -- 'kind: qa-record\n' > ${own_bash_record}")"
+run_case_in_repo_root "path-ref-allow-own-record-plain-redirect-legal-write" 0 "" "$payload"
+
 # --- tally -------------------------------------------------------------------
 
 echo ""
