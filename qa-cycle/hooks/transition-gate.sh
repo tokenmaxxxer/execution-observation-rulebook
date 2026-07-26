@@ -58,6 +58,17 @@ if [ ! -f "$_contract_repo_root/docs/specs/role-handoff-contract.md" ]; then
   exit 2
 fi
 
+# --- note on read-refusal (contract v2 conformance) -------------------------
+# There is, and was, no kind-based read-refusal logic in this file to
+# delete. This gate has never read docs/reports/records/<subject>/qa.md or
+# any other role's record, so it has never blocked a read of one either.
+# v1's "qa uniformly refuses hypothesis/build-proposal/feasibility-record/
+# review-record/ops-state if handed over" lived entirely in README.md prose,
+# never in this gate. The blackboard-record additions below (NEVER-OVERWRITE
+# path check and the structural DEPENDS-ON `upstream:` check) are new write
+# checks, not a relaxation of any prior read check — do not go looking for
+# read-refusal code here to remove, there was never any to remove.
+
 # --dump-facts is a read-only introspection path: it prints the same
 # TABLE/FIELDS structures the decision logic below branches on, as JSON,
 # and exits 0. It touches no state file, no token, no QA_WORKSPACE, and
@@ -104,20 +115,22 @@ if [ "$dump_facts" = 1 ]; then
   fi
 fi
 
-if [ "$dump_facts" != 1 ]; then
-  if [ -z "${QA_WORKSPACE:-}" ]; then
-    echo "qa-cycle: refused — QA_WORKSPACE is unset. The gate has no state file to read, so it cannot verify this write is a legal transition. Set QA_WORKSPACE to the QA workspace root." >&2
-    exit 2
-  fi
-fi
-
+# The QA_WORKSPACE-unset refusal used to live here, unconditionally, before
+# any payload was even read — that was correct when this gate governed only
+# the item-level state.md machine under $QA_WORKSPACE. It is no longer
+# correct now that this gate also governs the in-repo blackboard record at
+# docs/reports/records/<subject>/qa.md and qa/** (contract v2 §10 abolishes
+# $QA_WORKSPACE for that path specifically). Whether QA_WORKSPACE is
+# required now depends on which path the write targets, which is only known
+# after the payload is parsed — so this check moved into the Python below,
+# and only applies once a write is determined to target the state.md shape.
 if [ "$dump_facts" = 1 ]; then
   payload=""
 else
   payload="$(cat)"
 fi
 
-QA_CYCLE_PAYLOAD="$payload" QA_CYCLE_WORKSPACE="${QA_WORKSPACE:-}" QA_CYCLE_DUMP_FACTS="$dump_facts" python3 <<'PY'
+QA_CYCLE_PAYLOAD="$payload" QA_CYCLE_WORKSPACE="${QA_WORKSPACE:-}" QA_CYCLE_REPO_ROOT="$_contract_repo_root" QA_CYCLE_DUMP_FACTS="$dump_facts" python3 <<'PY'
 import json
 import os
 import posixpath
@@ -242,8 +255,114 @@ path_norm = path.replace("\\", "/")
 path_abs = posixpath.normpath(path_norm if posixpath.isabs(path_norm) else posixpath.join(os.getcwd(), path_norm))
 path_real = posixpath.normpath(os.path.realpath(path_abs).replace("\\", "/"))
 
+
+def attempted_content_generic():
+    """Same shape as attempted_content() below, but usable before that
+    function is defined and without assuming the state.md item-block
+    context — used only by the blackboard-record path below."""
+    if tool == "Write":
+        c = tool_input.get("content")
+    else:  # Edit
+        c = tool_input.get("new_string")
+    if not isinstance(c, str):
+        refuse("qa-cycle: refused — could not read the new content of this write, so it cannot be checked.")
+    return c
+
+
+# --- blackboard record: docs/reports/records/<subject>/qa.md and qa/** -----
+# Contract v2 §10 abolishes $QA_WORKSPACE as the home for qa's
+# cross-role-visible evidence; the blackboard record itself was never
+# $QA_WORKSPACE-rooted even under v1 (README.md's PRODUCES table already put
+# the pointer at docs/reports/records/<subject>/qa.md in-repo). This path is
+# resolved and containment-checked against the *repo root* already resolved
+# above for the contract-presence check (_contract_repo_root, passed through
+# as QA_CYCLE_REPO_ROOT), never against $QA_WORKSPACE — see
+# docs/proposals/2026-07-26-contract-v2-conformance.md item 2. This check
+# runs, and can allow or refuse, whether or not $QA_WORKSPACE is set: qa's
+# item-level state.md machine (below) is a separate, still-$QA_WORKSPACE-
+# rooted concern, untouched by this addition.
+_repo_root = os.environ.get("QA_CYCLE_REPO_ROOT", "")
+_repo_root_real = posixpath.normpath(os.path.realpath(_repo_root).replace("\\", "/")) if _repo_root else ""
+if _repo_root_real:
+    _records_root = _repo_root_real + "/docs/reports/records"
+    if path_real == _records_root or path_real.startswith(_records_root + "/"):
+        _records_rel = path_real[len(_records_root) + 1:]
+        _rparts = _records_rel.split("/")
+        if len(_rparts) >= 2 and _rparts[0]:
+            _subject, _second = _rparts[0], _rparts[1]
+            _is_qa_owned = (_second == "qa.md" and len(_rparts) == 2) or (_second == "qa" and len(_rparts) >= 2)
+
+            if not _is_qa_owned:
+                # NEVER-OVERWRITE (contract §11, qa's row): qa owns exactly
+                # docs/reports/records/<subject>/qa.md and
+                # docs/reports/records/<subject>/qa/** under this subject.
+                # Anything else under docs/reports/records/<subject>/ (e.g.
+                # coding.md, review.md) is another role's path.
+                refuse(
+                    "qa-cycle: refused — %s is under docs/reports/records/%s/ but is not one of qa's owned "
+                    "paths (qa.md or qa/**). NEVER-OVERWRITE (contract §11): qa may not write another role's "
+                    "record path." % (path, _subject)
+                )
+
+            if _second == "qa.md":
+                _content = attempted_content_generic()
+
+                # Comment-tolerant `kind:` parser (contract §2: "kind
+                # parsing by any gate must tolerate a trailing comment on
+                # the line"), built on the same template as the existing
+                # ITEM_KEY/STATE_KEY patterns below. No `^kind:`-style
+                # regex existed anywhere in this repo before this addition.
+                KIND_KEY = re.compile(r"^kind:\s*(.*?)\s*(?:#.*)?$", re.M)
+                _kind_matches = KIND_KEY.findall(_content)
+                _kind = _kind_matches[0].strip() if len(_kind_matches) == 1 and _kind_matches[0].strip() else None
+
+                # DEPENDS-ON structural check (contract §4, §11, §14): the
+                # only mechanically detectable violation is a qa.md write
+                # whose own upstream fields cite a non-empty sha/path
+                # pointing at another role's record kind, with no
+                # acknowledged_sha, as if it were a dependency basis.
+                # DEPENDS-ON is empty for qa — qa may READ any record as
+                # advisory context but must never cite one as its verdict's
+                # basis. This check cannot see a verdict's prose citing
+                # another role's record by name in free text; per §14,
+                # that stays a documentation-only rule beyond this
+                # structural check.
+                def _field(key):
+                    m = re.search(r"^%s:\s*(.*?)\s*(?:#.*)?$" % re.escape(key), _content, re.M)
+                    v = m.group(1).strip() if m else ""
+                    return v or None
+
+                _upstream_kind = _field("upstream_kind")
+                _upstream_sha = _field("upstream_sha")
+                _upstream_path = _field("upstream_path")
+                _acknowledged_sha = _field("acknowledged_sha")
+
+                if (
+                    _upstream_kind
+                    and _upstream_kind != "qa-record"
+                    and (_upstream_sha or _upstream_path)
+                    and not _acknowledged_sha
+                ):
+                    refuse(
+                        "qa-cycle: refused — this qa.md write's upstream fields cite kind %r (upstream_sha=%r, "
+                        "upstream_path=%r) with no acknowledged_sha. DEPENDS-ON is empty for qa (contract §4, "
+                        "§11): qa may READ another role's record as advisory context, but a qa verdict may "
+                        "never be built on another role's record as its basis. This is the structurally "
+                        "checkable case only (contract §14)." % (_upstream_kind, _upstream_sha, _upstream_path)
+                    )
+
+            allow()
+
+# --- item-level state.md machine (unchanged: still $QA_WORKSPACE-rooted) ---
 # Only state.md writes are this gate's business, and only ones inside the
 # workspace root — never trust a path by name alone.
+if ws == "":
+    # QA_WORKSPACE is required for this path only now — the blackboard
+    # record path above already ran and returned (allow/refuse/fall
+    # through) without needing it. A write that reaches this point is not
+    # the blackboard record, so the item-level machine's own requirement
+    # for a workspace root still applies exactly as before.
+    refuse("qa-cycle: refused — QA_WORKSPACE is unset. The gate has no state file to read, so it cannot verify this write is a legal transition. Set QA_WORKSPACE to the QA workspace root.")
 if not (path_real == ws_real or path_real.startswith(ws_real + "/")):
     not_applicable()
 
