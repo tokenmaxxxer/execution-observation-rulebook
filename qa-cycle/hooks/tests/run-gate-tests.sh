@@ -7,6 +7,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GATE="${SCRIPT_DIR}/../transition-gate.sh"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
 # `env` inherits the caller's environment, so a case that means "unset" must
 # actually remove the variable — omitting it from env_args only leaves
@@ -152,6 +153,20 @@ print(json.dumps({
 PY
 }
 
+payload_bash() {
+  # payload_bash <command>
+  # Emits a JSON payload shaped like a PreToolUse Bash event.
+  local command="$1"
+  python3 - "$command" <<'PY'
+import json, sys
+command = sys.argv[1]
+print(json.dumps({
+    "tool_name": "Bash",
+    "tool_input": {"command": command},
+}))
+PY
+}
+
 # --- test runner -------------------------------------------------------------
 
 run_case() {
@@ -183,6 +198,50 @@ run_case() {
 
   # Where refusal is expected (non-zero), the gate must emit a non-empty
   # message on stderr. Never assert on the message's text — only presence.
+  local msg_note=""
+  if [ "$expected" -ne 0 ]; then
+    if [ -z "$err" ]; then
+      status="FAIL"
+      msg_note=" (refusal message was empty)"
+    fi
+  fi
+
+  RESULTS+=("${name}|${expected}|${rc}|${status}${msg_note}")
+  echo "case: ${name} | expected: ${expected} | observed: ${rc} | ${status}${msg_note}"
+}
+
+run_case_in_repo_root() {
+  # run_case_in_repo_root <name> <expected_exit> <ws-or-empty> <payload-or-empty> [extra_env...]
+  # Like run_case, but invokes the gate with cwd set to REPO_ROOT so its
+  # internal `git rev-parse --show-toplevel` (and the records-tree root
+  # derived from it) resolves against this repo, regardless of where this
+  # test script itself was launched from. Needed for the Bash write-target
+  # cases below, which reference docs/reports/records/ under REPO_ROOT.
+  local name="$1" expected="$2" ws="$3" payload="$4"
+  shift 4
+  local extra_env=("$@")
+
+  local err rc
+  local env_args=()
+  if [ -n "$ws" ]; then
+    env_args+=("QA_WORKSPACE=${ws}")
+  fi
+  env_args+=("${extra_env[@]+"${extra_env[@]}"}")
+
+  set +e
+  err="$(cd "$REPO_ROOT" && printf '%s' "$payload" | env "${GATE_ENV_CLEAR[@]}" ${env_args[@]+"${env_args[@]}"} "$GATE" 2>&1 1>/tmp/gate-test-stdout.$$)"
+  rc=$?
+  set -e
+  rm -f "/tmp/gate-test-stdout.$$"
+
+  local status="ok"
+  if [ "$rc" -ne "$expected" ]; then
+    status="FAIL"
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+  else
+    PASS_COUNT=$((PASS_COUNT + 1))
+  fi
+
   local msg_note=""
   if [ "$expected" -ne 0 ]; then
     if [ -z "$err" ]; then
@@ -843,6 +902,43 @@ write_target "$ws44" "$slug" "staging" "http://localhost:3000" "API_KEY"
 payload="$(payload_write "${ws44}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "reproduced against http://localhost:3000")")"
 run_case "target-normal-valid-declaration-still-allowed" 0 "$ws44" "$payload"
 cleanup_ws "$ws44"
+
+# =========================================================================
+# Case 45: write-target resolution is by TARGET PATH, not tool name
+#          (docs/proposals/2026-07-26-fix-state-gate-writeop-bypass.md).
+#          A Bash call that writes another role's owned record path via
+#          `python3 -c "open(...).write(...)"` must refuse exactly as a
+#          Write/Edit call targeting the same path would — the old
+#          `if tool not in ("Write", "Edit"): skip` shape let this through.
+# =========================================================================
+other_role_record="${REPO_ROOT}/docs/reports/records/some-subject/coding.md"
+payload="$(payload_bash "python3 -c \"open('${other_role_record}', 'w').write('x')\"")"
+run_case_in_repo_root "bash-write-other-role-record-refused" 2 "" "$payload"
+
+# =========================================================================
+# Case 46: a legal state transition written to the agent's own owned
+#          record path (via the tool the content-shape checks understand)
+#          -> expect allow. Companion positive case proving the fix does
+#          not turn every write to an owned path into a refusal.
+# =========================================================================
+own_record="${REPO_ROOT}/docs/reports/records/some-subject-46/qa.md"
+own_record_content=$'kind: qa-record\n'
+payload="$(payload_write "$own_record" "$own_record_content")"
+run_case_in_repo_root "bash-fix-companion-own-record-legal-write-allowed" 0 "" "$payload"
+
+# =========================================================================
+# Case 47: a Bash write whose exact target path cannot be confidently
+#          extracted, but the command text targets the owned record tree
+#          (docs/reports/records/) -> expect refuse (default-deny on an
+#          indeterminate Bash write target within the owned record tree,
+#          per the contract).
+# =========================================================================
+payload="$(payload_bash "some_var=\"${REPO_ROOT}/docs/reports/records/some-subject/qa.md\"; python3 - <<PYEOF
+import os
+target = os.environ.get('SOME_VAR_NOT_SET_HERE') or \"\$some_var\"
+open(target, 'w').write('x')
+PYEOF")"
+run_case_in_repo_root "bash-indeterminate-target-in-records-tree-refused" 2 "" "$payload"
 
 # --- tally -------------------------------------------------------------------
 

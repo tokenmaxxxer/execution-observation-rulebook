@@ -238,16 +238,91 @@ if not isinstance(event, dict):
 
 tool = event.get("tool_name") or ""
 tool_input = event.get("tool_input")
-if tool not in ("Write", "Edit"):
+
+# --- write-target resolution (contract: docs/proposals/2026-07-26-fix-state-gate-writeop-bypass.md) ---
+# Which tool ran is not what decides whether this is a write this gate must
+# inspect — the TARGET PATH is. A tool-name allowlist ("only Write/Edit are
+# writes") is exactly the bypass this replaces: a Bash call that writes a
+# file (e.g. `python3 -c "open(path,'w').write(...)"`, a shell redirect, a
+# `tee`) is just as much a write as a Write/Edit call, and must be
+# adjudicated the same way. Nothing here weakens the tool-agnostic checks
+# below; it only changes how `path` (the thing those checks inspect) is
+# obtained.
+if tool in ("Write", "Edit"):
+    if not isinstance(tool_input, dict):
+        refuse("qa-cycle: refused — a %s call arrived with no readable tool_input. Refusing rather than allowing an uninspectable write." % tool)
+    path = tool_input.get("file_path")
+    if not isinstance(path, str) or not path:
+        refuse("qa-cycle: refused — a %s call arrived with no readable file_path. Refusing rather than allowing an uninspectable write." % tool)
+elif tool == "NotebookEdit":
+    if not isinstance(tool_input, dict):
+        refuse("qa-cycle: refused — a %s call arrived with no readable tool_input. Refusing rather than allowing an uninspectable write." % tool)
+    path = tool_input.get("notebook_path")
+    if not isinstance(path, str) or not path:
+        refuse("qa-cycle: refused — a %s call arrived with no readable notebook_path. Refusing rather than allowing an uninspectable write." % tool)
+elif tool == "Bash":
+    if not isinstance(tool_input, dict):
+        refuse("qa-cycle: refused — a Bash call arrived with no readable tool_input. Refusing rather than allowing an uninspectable write.")
+    command = tool_input.get("command")
+    if not isinstance(command, str) or not command:
+        refuse("qa-cycle: refused — a Bash call arrived with no readable command. Refusing rather than allowing an uninspectable write.")
+
+    # A Bash command's write target cannot be determined with the same
+    # confidence as a Write/Edit's file_path: it is an arbitrary shell
+    # program that may write anywhere via redirection, `python3 -c`, `tee`,
+    # `cp`, `sed -i`, etc. Rather than try to parse shell semantics
+    # correctly (and inevitably miss a case), this pulls every path-shaped
+    # token out of the command (quoted or bare, containing a `/`) as a
+    # *candidate* write target and checks whether any candidate resolves
+    # into the owned record tree (docs/reports/records/). If the command
+    # references that tree at all, this refuses — a Bash write into that
+    # tree can never be confirmed to be a legal, content-validated
+    # transition the way a Write/Edit call can (the content-shape checks
+    # below key off tool_input.content / tool_input.new_string, which a
+    # Bash call does not have), so "cannot confirm" and "targets the
+    # record tree" together are default-deny territory per the contract,
+    # regardless of which subject/role the candidate path names.
+    _bash_tokens = []
+    for _m in re.finditer(r"'((?:[^'\\]|\\.)*)'|\"((?:[^\"\\]|\\.)*)\"|(\S+)", command):
+        _tok = _m.group(1) if _m.group(1) is not None else (_m.group(2) if _m.group(2) is not None else _m.group(3))
+        if _tok and "/" in _tok:
+            _bash_tokens.append(_tok)
+
+    _repo_root_for_bash = os.environ.get("QA_CYCLE_REPO_ROOT", "")
+    _repo_root_for_bash_real = posixpath.normpath(os.path.realpath(_repo_root_for_bash).replace("\\", "/")) if _repo_root_for_bash else ""
+    _bash_records_root = (_repo_root_for_bash_real + "/docs/reports/records") if _repo_root_for_bash_real else ""
+
+    _bash_hits_records_tree = False
+    for _tok in _bash_tokens:
+        _tok_norm = _tok.replace("\\", "/")
+        _tok_abs = posixpath.normpath(_tok_norm if posixpath.isabs(_tok_norm) else posixpath.join(os.getcwd(), _tok_norm))
+        if _bash_records_root and (_tok_abs == _bash_records_root or _tok_abs.startswith(_bash_records_root + "/")):
+            _bash_hits_records_tree = True
+            break
+        # Also treat a bare relative reference to the tree (not resolvable
+        # to an absolute path from cwd alone, e.g. embedded in a larger
+        # expression) as a hit — conservative on purpose.
+        if "docs/reports/records/" in _tok_norm:
+            _bash_hits_records_tree = True
+            break
+
+    if _bash_hits_records_tree:
+        refuse(
+            "qa-cycle: refused — a Bash command references the owned record tree "
+            "(docs/reports/records/) as a write target. A Bash call's write target and "
+            "content cannot be confirmed the way a Write/Edit call's can; default-deny "
+            "applies to any Bash write whose target is, or cannot be excluded from being, "
+            "inside that tree (contract: write-target resolution is by target path, not "
+            "tool name)."
+        )
+    # No reference to the owned record tree found anywhere in the command:
+    # this gate has nothing further to say about it (it may still be a
+    # write, just not one to a path this gate governs).
+    not_applicable()
+else:
     # Not a write-shaped tool call at all; this gate has nothing to say
     # about it. Distinct from the malformed-shape refusals above and below.
     not_applicable()
-if not isinstance(tool_input, dict):
-    refuse("qa-cycle: refused — a %s call arrived with no readable tool_input. Refusing rather than allowing an uninspectable write." % tool)
-
-path = tool_input.get("file_path")
-if not isinstance(path, str) or not path:
-    refuse("qa-cycle: refused — a %s call arrived with no readable file_path. Refusing rather than allowing an uninspectable write." % tool)
 
 ws = os.environ.get("QA_CYCLE_WORKSPACE", "")
 ws_real = posixpath.normpath(os.path.realpath(ws).replace("\\", "/"))
