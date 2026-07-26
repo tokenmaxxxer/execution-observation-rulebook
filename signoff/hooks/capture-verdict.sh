@@ -26,7 +26,7 @@ esac
 ws="${QA_WORKSPACE:-}"
 [ -n "$ws" ] || exit 0
 [ -d "$ws" ] || exit 0
-ws="$(cd "$ws" 2>/dev/null && pwd)" || exit 0
+ws="$(cd "$ws" 2>/dev/null && pwd -P)" || exit 0
 
 command -v jq >/dev/null 2>&1 || exit 0
 command -v python3 >/dev/null 2>&1 || exit 0
@@ -39,7 +39,7 @@ echo "$payload" | jq -e '.' >/dev/null 2>&1 || exit 0
 prompt="$(echo "$payload" | jq -r '.prompt // empty' 2>/dev/null || true)"
 [ -n "$prompt" ] || exit 0
 
-slug=$(git remote get-url origin 2>/dev/null | sed -e 's#\.git/*$##' -e 's#/*$##' -e 's#.*[:/]\([^/]*\)/\([^/]*\)$#\1-\2#')
+slug=$(git remote get-url origin 2>/dev/null | sed -e 's#\.git/*$##' -e 's#/*$##' -e 's#.*[:/]\([^/]*\)/\([^/]*\)$#\1-\2#' || true)
 [ -n "$slug" ] || slug=$(basename "$PWD")
 
 # The project identifier is validated at the point it is read, by
@@ -71,7 +71,7 @@ state_file="$proj_dir/state.md"
 # Required, explicit form: "item <id>" (case-insensitive). No item id, no
 # mint — this hook never guesses which item a bare "confirmed defect"
 # refers to.
-raw_item="$(echo "$prompt" | grep -ioE '\bitem[[:space:]]+[A-Za-z0-9_-]+' | head -1 | sed -E 's/^[Ii][Tt][Ee][Mm][[:space:]]+//')"
+raw_item="$(echo "$prompt" | grep -ioE '\bitem[[:space:]]+[A-Za-z0-9_-]+' | head -1 | sed -E 's/^[Ii][Tt][Ee][Mm][[:space:]]+//' || true)"
 [ -n "$raw_item" ] || exit 0
 
 # The item id is validated at the point it is read, by allow-list, before
@@ -150,7 +150,7 @@ esac
 # (e.g. a stray "now" in unrelated prose) ever counts.
 priority_value=""
 if echo "$prompt" | grep -qiE '\bitem[[:space:]]+'"$item_id"'\b'; then
-  priority_value="$(echo "$prompt" | grep -ioE 'priority[[:space:]:]+(now|next|later|someday)\b' | tail -1 | grep -ioE '(now|next|later|someday)$' | tr 'A-Z' 'a-z')"
+  priority_value="$(echo "$prompt" | grep -ioE 'priority[[:space:]:]+(now|next|later|someday)\b' | tail -1 | grep -ioE '(now|next|later|someday)$' | tr 'A-Z' 'a-z' || true)"
 fi
 
 if [ -z "$to" ] && [ -z "$priority_value" ]; then
@@ -182,7 +182,7 @@ mint_token() {
   local token_file="$1"
   shift
   local phrase
-  phrase="$(echo "$prompt" | grep -iE '.' | grep -miE 1 -E \
+  phrase="$(echo "$prompt" | grep -iE '.' | grep -m1 -iE \
     '(confirmed[- ]defect|defect|not a bug|won.?t.?fix|hand(ing)? (this|it) (off|over)|fix (has )?landed|re-?verify|priority)' || true)"
   [ -n "$phrase" ] || phrase="$prompt"
   phrase="$(echo "$phrase" | cut -c1-300 | tr -d '\r')"

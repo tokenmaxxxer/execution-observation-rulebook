@@ -8,6 +8,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GATE="${SCRIPT_DIR}/../transition-gate.sh"
 
+# `env` inherits the caller's environment, so a case that means "unset" must
+# actually remove the variable — omitting it from env_args only leaves
+# whatever the developer's shell exports, and every machine that runs this
+# rulebook has QA_WORKSPACE set. Both variables the gate reads are cleared
+# here and re-added per case, so a case's environment is what it declares.
+GATE_ENV_CLEAR=(-u QA_WORKSPACE -u QA_CYCLE_DISABLE)
+
+# bash 3.2 (macOS's /bin/bash) treats "${arr[@]}" on an *empty* array as a
+# reference to an unbound variable under `set -u`, so every expansion of a
+# possibly-empty array below uses the ${arr[@]+"${arr[@]}"} form: it expands
+# to no words at all when the array is empty and to every element when it is
+# not, on both 3.2 and 5.x. "${arr[@]:-}" is not a substitute — it expands to
+# one empty argument, which `env` then tries to run as a command.
 PASS_COUNT=0
 FAIL_COUNT=0
 RESULTS=()
@@ -152,10 +165,10 @@ run_case() {
   if [ -n "$ws" ]; then
     env_args+=("QA_WORKSPACE=${ws}")
   fi
-  env_args+=("${extra_env[@]}")
+  env_args+=("${extra_env[@]+"${extra_env[@]}"}")
 
   set +e
-  err="$(printf '%s' "$payload" | env "${env_args[@]}" "$GATE" 2>&1 1>/tmp/gate-test-stdout.$$)"
+  err="$(printf '%s' "$payload" | env "${GATE_ENV_CLEAR[@]}" ${env_args[@]+"${env_args[@]}"} "$GATE" 2>&1 1>/tmp/gate-test-stdout.$$)"
   rc=$?
   set -e
   rm -f "/tmp/gate-test-stdout.$$"
@@ -199,7 +212,7 @@ run_case_argv() {
   fi
 
   set +e
-  err="$(printf '%s' "$payload" | env "${env_args[@]}" "$GATE" "${gate_args[@]}" 2>&1 1>/tmp/gate-test-stdout.$$)"
+  err="$(printf '%s' "$payload" | env "${GATE_ENV_CLEAR[@]}" ${env_args[@]+"${env_args[@]}"} "$GATE" ${gate_args[@]+"${gate_args[@]}"} 2>&1 1>/tmp/gate-test-stdout.$$)"
   rc=$?
   set -e
   rm -f "/tmp/gate-test-stdout.$$"
@@ -844,13 +857,18 @@ echo ""
 echo "=== directive-drift-check ==="
 drift_rc=0
 "${SCRIPT_DIR}/directive-drift-check.sh" || drift_rc=$?
-if [ "$drift_rc" -ne 0 ]; then
+if [ "$drift_rc" -eq 3 ]; then
+  # Exit 3 is "could not run here", not "ran and found drift". Reported
+  # loudly and separately, and deliberately not counted as a failure: a
+  # permanently red tally on macOS would bury the 52 gate cases that do run.
+  echo "=== directive-drift-check: DID NOT RUN — see the message above ==="
+elif [ "$drift_rc" -ne 0 ]; then
   echo "=== directive-drift-check: FAILED (exit ${drift_rc}) ==="
 else
   echo "=== directive-drift-check: passed ==="
 fi
 
-if [ "$FAIL_COUNT" -ne 0 ] || [ "$drift_rc" -ne 0 ]; then
+if [ "$FAIL_COUNT" -ne 0 ] || { [ "$drift_rc" -ne 0 ] && [ "$drift_rc" -ne 3 ]; }; then
   exit 1
 fi
 exit 0
