@@ -24,8 +24,24 @@ command -v python3 >/dev/null 2>&1 || {
 
 payload="$(cat 2>/dev/null || true)"
 
+set +e
 QA_PAYLOAD="$payload" QA_CPD="${CLAUDE_PROJECT_DIR:-}" python3 <<'PY'
 import json, os, posixpath, re, sys, subprocess
+
+# --- fail-closed on ANY internal error (frozen contract: gates DENY on error) ---
+# Any uncaught exception in the judge below (e.g. os.path.realpath on a
+# null-byte/undecodable path raising ValueError, which would otherwise exit 1
+# = fail-OPEN for a PreToolUse hook) becomes exit 2 (DENY). allow()/deny() raise
+# SystemExit, which does NOT pass through this hook, so the exact allow(0)/
+# deny(2) verdict paths are preserved unchanged.
+def _qa_fail_closed_excepthook(_t, _e, _tb):
+    sys.stderr.write("qa-cycle: refused — fail-closed: internal error: %s\n" % (_e,))
+    try:
+        sys.stderr.flush()
+    except Exception:
+        pass
+    os._exit(2)
+sys.excepthook = _qa_fail_closed_excepthook
 
 def deny(msg):
     sys.stderr.write("qa-cycle: refused — " + msg + "\n")
@@ -113,3 +129,10 @@ for candidate in (resolved, absu):
 
 allow()
 PY
+rc=$?
+set -e
+if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
+  echo "qa-cycle: refused — fail-closed: internal error (path-ownership-gate.sh judge exited $rc)." >&2
+  exit 2
+fi
+exit "$rc"

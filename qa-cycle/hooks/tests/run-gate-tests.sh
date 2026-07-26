@@ -1034,6 +1034,90 @@ other_role_58="${REPO_ROOT}/docs/reports/records/root-resolution-subject-58/codi
 payload="$(payload_write "$other_role_58" $'kind: build-record\n')"
 run_case_in_repo_root "project-dir-unset-git-toplevel-fallback-enforces" 2 "" "$payload" "CLAUDE_PROJECT_DIR="
 
+# =========================================================================
+# Cases 59+: fail-closed-on-internal-error (frozen contract:
+# docs/proposals/2026-07-26-gates-fail-closed-on-internal-error.md).
+#
+# Every gate SCRIPT must resolve to exit 2 (DENY) on ANY internal error,
+# because a PreToolUse hook BLOCKS only on exit 2 and treats every other
+# non-zero exit as NON-BLOCKING (fail-OPEN). The two crash-inducing payloads
+# are the ones named in the contract:
+#   (a) a null byte in tool_input.file_path ( ) — makes os.path.realpath
+#       raise an uncaught ValueError, which without the hardening exits 1
+#       (fail-OPEN); the python excepthook + the shell rc-mapping both turn
+#       it into exit 2.
+#   (b) malformed (non-JSON) stdin — the parse-failure DENY path, asserted
+#       here for every gate so a regression that made any of them fall
+#       through on unparseable input would be caught.
+# =========================================================================
+GATES_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+payload_nullbyte_write() {
+  # A Write payload whose file_path carries an embedded NUL. Relative so it
+  # joins the repo root and is reached by the gate's realpath() rather than
+  # short-circuited as out-of-scope.
+  python3 <<'PY'
+import json
+print(json.dumps({
+    "tool_name": "Write",
+    "tool_input": {
+        "file_path": "docs/reports/records/crash-null/" + chr(0) + "/qa.md",
+        "content": "kind: qa-record\n",
+    },
+}))
+PY
+}
+
+MALFORMED_PAYLOAD='{ this is definitely : not valid json '
+
+run_gate_crash() {
+  # run_gate_crash <name> <gate-abs-path> <expected_exit> <payload> [extra_env...]
+  # Runs an arbitrary gate script as a real subprocess with cwd=REPO_ROOT and
+  # CLAUDE_PROJECT_DIR=REPO_ROOT, asserting on the observed exit code.
+  local name="$1" gate="$2" expected="$3" payload="$4"
+  shift 4
+  local extra_env=("$@")
+  local err rc
+  set +e
+  err="$(cd "$REPO_ROOT" && printf '%s' "$payload" \
+    | env "${GATE_ENV_CLEAR[@]}" "CLAUDE_PROJECT_DIR=${REPO_ROOT}" \
+        ${extra_env[@]+"${extra_env[@]}"} "$gate" 2>&1 1>/dev/null)"
+  rc=$?
+  set -e
+  local status="ok"
+  if [ "$rc" -ne "$expected" ]; then
+    status="FAIL"
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+  else
+    PASS_COUNT=$((PASS_COUNT + 1))
+  fi
+  local msg_note=""
+  if [ "$expected" -ne 0 ] && [ -z "$err" ]; then
+    status="FAIL"
+    msg_note=" (fail-closed message was empty)"
+  fi
+  RESULTS+=("${name}|${expected}|${rc}|${status}${msg_note}")
+  echo "case: ${name} | expected: ${expected} | observed: ${rc} | ${status}${msg_note}"
+}
+
+nb_payload="$(payload_nullbyte_write)"
+
+# Write-shaped gates: a null-byte file_path must DENY (exit 2) via the new
+# hardening (an uncaught realpath ValueError would otherwise fail OPEN).
+run_gate_crash "failclosed-transition-gate-nullbyte-path"      "${GATES_DIR}/transition-gate.sh"      2 "$nb_payload"
+run_gate_crash "failclosed-doc-bucket-gate-nullbyte-path"      "${GATES_DIR}/doc-bucket-gate.sh"      2 "$nb_payload"
+run_gate_crash "failclosed-path-ownership-gate-nullbyte-path"  "${GATES_DIR}/path-ownership-gate.sh"  2 "$nb_payload"
+run_gate_crash "failclosed-record-fields-gate-nullbyte-path"   "${GATES_DIR}/record-fields-gate.sh"   2 "$nb_payload"
+
+# Every gate (write-shaped and the git-commit gates alike): malformed JSON on
+# stdin must DENY (exit 2), never fall through.
+run_gate_crash "failclosed-transition-gate-malformed-json"     "${GATES_DIR}/transition-gate.sh"      2 "$MALFORMED_PAYLOAD" "QA_WORKSPACE=${REPO_ROOT}"
+run_gate_crash "failclosed-doc-bucket-gate-malformed-json"     "${GATES_DIR}/doc-bucket-gate.sh"      2 "$MALFORMED_PAYLOAD"
+run_gate_crash "failclosed-path-ownership-gate-malformed-json" "${GATES_DIR}/path-ownership-gate.sh"  2 "$MALFORMED_PAYLOAD"
+run_gate_crash "failclosed-record-fields-gate-malformed-json"  "${GATES_DIR}/record-fields-gate.sh"   2 "$MALFORMED_PAYLOAD"
+run_gate_crash "failclosed-handbook-trigger-gate-malformed-json" "${GATES_DIR}/handbook-trigger-gate.sh" 2 "$MALFORMED_PAYLOAD"
+run_gate_crash "failclosed-trailer-gate-malformed-json"        "${GATES_DIR}/trailer-gate.sh"         2 "$MALFORMED_PAYLOAD"
+
 # --- tally -------------------------------------------------------------------
 
 echo ""

@@ -156,12 +156,28 @@ else
   payload="$(cat)"
 fi
 
+set +e
 QA_CYCLE_PAYLOAD="$payload" QA_CYCLE_WORKSPACE="${QA_WORKSPACE:-}" QA_CYCLE_REPO_ROOT="$_contract_repo_root" QA_CYCLE_DUMP_FACTS="$dump_facts" python3 <<'PY'
 import json
 import os
 import posixpath
 import re
 import sys
+
+# --- fail-closed on ANY internal error (frozen contract: gates DENY on error) ---
+# Any uncaught exception in the judge below (e.g. os.path.realpath on a
+# null-byte/undecodable path raising ValueError, which would otherwise exit 1
+# = fail-OPEN for a PreToolUse hook) becomes exit 2 (DENY). not_applicable()/
+# allow()/refuse() raise SystemExit, which does NOT pass through this hook, so
+# the exact allow(0)/deny(2) verdict paths are preserved unchanged.
+def _qa_fail_closed_excepthook(_t, _e, _tb):
+    sys.stderr.write("qa-cycle: refused — fail-closed: internal error: %s\n" % (_e,))
+    try:
+        sys.stderr.flush()
+    except Exception:
+        pass
+    os._exit(2)
+sys.excepthook = _qa_fail_closed_excepthook
 
 def not_applicable():
     # This PreToolUse call is not a write this gate governs at all (wrong
@@ -1165,5 +1181,10 @@ print(json.dumps({"hookSpecificOutput": {
 }}))
 sys.exit(0)
 PY
-
-exit $?
+rc=$?
+set -e
+if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
+  echo "qa-cycle: refused — fail-closed: internal error (transition-gate.sh judge exited $rc)." >&2
+  exit 2
+fi
+exit "$rc"
