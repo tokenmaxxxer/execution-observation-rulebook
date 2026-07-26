@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# --- fail-closed trap (must stay the first executable statement) ---
+__fc(){ rc=$?; if [ "$rc" != 0 ] && [ "$rc" != 2 ]; then echo "fail-closed: gate aborted (rc=$rc)" >&2; exit 2; fi; }
+trap __fc EXIT
 # PreToolUse hook: the QA cycle gate.
 #
 # Reads the transition table below (encoded from

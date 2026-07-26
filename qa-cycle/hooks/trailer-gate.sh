@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# --- fail-closed trap (must stay the first executable statement) ---
+__fc(){ rc=$?; if [ "$rc" != 0 ] && [ "$rc" != 2 ]; then echo "fail-closed: gate aborted (rc=$rc)" >&2; exit 2; fi; }
+trap __fc EXIT
 # PreToolUse hook (Bash matching `git commit`): contract §13 trailer
 # requirement. When a commit lands qa's own record for an IN-PROGRESS unit
 # (a staged docs/reports/records/<subject>/qa.md whose on-disk loop_state is

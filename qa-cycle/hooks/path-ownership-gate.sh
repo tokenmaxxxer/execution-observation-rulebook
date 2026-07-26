@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# --- fail-closed trap (must stay the first executable statement) ---
+__fc(){ rc=$?; if [ "$rc" != 0 ] && [ "$rc" != 2 ]; then echo "fail-closed: gate aborted (rc=$rc)" >&2; exit 2; fi; }
+trap __fc EXIT
 # PreToolUse hook (Write|Edit|MultiEdit|NotebookEdit): enforces contract
 # section 11's static, role-permanent owned-path table for the qa role.
 # Generalizes coding's warrant/scope-gate.sh write-set shape to §11's

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# --- fail-closed trap (must stay the first executable statement) ---
+__fc(){ rc=$?; if [ "$rc" != 0 ] && [ "$rc" != 2 ]; then echo "fail-closed: gate aborted (rc=$rc)" >&2; exit 2; fi; }
+trap __fc EXIT
 # PreToolUse hook (Bash matching `git commit`): contract §21 handbook-trigger
 # half. When a commit's staged file set introduces or changes an operational
 # surface (env-var example, config/dependency manifest, migration, or a

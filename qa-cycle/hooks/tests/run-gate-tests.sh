@@ -1118,6 +1118,56 @@ run_gate_crash "failclosed-record-fields-gate-malformed-json"  "${GATES_DIR}/rec
 run_gate_crash "failclosed-handbook-trigger-gate-malformed-json" "${GATES_DIR}/handbook-trigger-gate.sh" 2 "$MALFORMED_PAYLOAD"
 run_gate_crash "failclosed-trailer-gate-malformed-json"        "${GATES_DIR}/trailer-gate.sh"         2 "$MALFORMED_PAYLOAD"
 
+# --- pre-logic abort (trap-at-top fail-closed) -------------------------------
+# The class the top-of-file EXIT trap closes: a gate that ABORTS for any reason
+# BEFORE its verdict logic runs — a failed `source`, a `set -euo pipefail`
+# abort, an unbound var — would exit non-2, which a PreToolUse hook treats as
+# NON-BLOCKING (fail-OPEN). The trap installed as the FIRST executable
+# statement (above set/source) must convert any such non-0-non-2 exit into
+# exit 2 (DENY). We prove it per-gate: take the REAL gate, inject a poison
+# `false` immediately after its first `set -euo pipefail` (a pre-verdict-logic
+# abort under `set -e`, rc=1), run the injected copy, and assert exit 2.
+run_gate_prelogic_abort() {
+  # run_gate_prelogic_abort <name> <gate-abs-path>
+  local name="$1" gate="$2"
+  local tmp rc err injected=0
+  tmp="$(mktemp "${TMPDIR:-/tmp}/prelogic-gate.XXXXXX.sh")"
+  # Insert `false` on the line after the first `set -euo pipefail`. awk keeps
+  # the trap and shebang exactly as shipped; the injection sits below `set -e`
+  # so it aborts the script before any verdict logic can run.
+  awk '
+    { print }
+    !done && /^set -euo pipefail/ { print "false  # injected pre-logic abort"; done=1 }
+  ' "$gate" > "$tmp"
+  if grep -q "injected pre-logic abort" "$tmp"; then injected=1; fi
+  chmod +x "$tmp"
+  set +e
+  err="$(cd "$REPO_ROOT" && printf '%s' "$nb_payload" \
+    | env "${GATE_ENV_CLEAR[@]}" "CLAUDE_PROJECT_DIR=${REPO_ROOT}" "$tmp" 2>&1 1>/dev/null)"
+  rc=$?
+  set -e
+  rm -f "$tmp"
+  local status="ok"
+  if [ "$injected" -ne 1 ]; then
+    status="FAIL (no set -euo pipefail anchor to inject after)"
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+  elif [ "$rc" -ne 2 ]; then
+    status="FAIL"
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+  else
+    PASS_COUNT=$((PASS_COUNT + 1))
+  fi
+  RESULTS+=("${name}|2|${rc}|${status}")
+  echo "case: ${name} | expected: 2 | observed: ${rc} | ${status}"
+}
+
+run_gate_prelogic_abort "failclosed-transition-gate-prelogic-abort"       "${GATES_DIR}/transition-gate.sh"
+run_gate_prelogic_abort "failclosed-doc-bucket-gate-prelogic-abort"       "${GATES_DIR}/doc-bucket-gate.sh"
+run_gate_prelogic_abort "failclosed-path-ownership-gate-prelogic-abort"   "${GATES_DIR}/path-ownership-gate.sh"
+run_gate_prelogic_abort "failclosed-record-fields-gate-prelogic-abort"    "${GATES_DIR}/record-fields-gate.sh"
+run_gate_prelogic_abort "failclosed-handbook-trigger-gate-prelogic-abort" "${GATES_DIR}/handbook-trigger-gate.sh"
+run_gate_prelogic_abort "failclosed-trailer-gate-prelogic-abort"          "${GATES_DIR}/trailer-gate.sh"
+
 # --- tally -------------------------------------------------------------------
 
 echo ""

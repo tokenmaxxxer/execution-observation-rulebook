@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# --- fail-closed trap (must stay the first executable statement) ---
+__fc(){ rc=$?; if [ "$rc" != 0 ] && [ "$rc" != 2 ]; then echo "fail-closed: gate aborted (rc=$rc)" >&2; exit 2; fi; }
+trap __fc EXIT
 # PreToolUse hook (Write|Edit|MultiEdit|NotebookEdit): enforces contract
 # section 20's per-role record minimum content on writes reaching qa's own
 # record file docs/reports/records/<subject>/qa.md.
