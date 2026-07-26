@@ -9,6 +9,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GATE="${SCRIPT_DIR}/../transition-gate.sh"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
+# The gate now resolves its protection root from CLAUDE_PROJECT_DIR first
+# (contract: docs/proposals/2026-07-26-gate-root-from-project-dir.md),
+# falling back to the git top-level of cwd only when unset. Every existing
+# case below predates that fallback distinction and was written assuming
+# "cwd's git top-level" always resolves to this repo; exporting
+# CLAUDE_PROJECT_DIR here keeps that true regardless of where this test
+# script itself is invoked from, without changing any case's intent.
+# Individual cases below that specifically exercise CLAUDE_PROJECT_DIR
+# override or unset it via extra_env / GATE_ENV_CLEAR as needed.
+export CLAUDE_PROJECT_DIR="$REPO_ROOT"
+
 # `env` inherits the caller's environment, so a case that means "unset" must
 # actually remove the variable — omitting it from env_args only leaves
 # whatever the developer's shell exports, and every machine that runs this
@@ -985,6 +996,43 @@ run_case_in_repo_root "path-ref-allow-foreign-plain-read" 0 "" "$payload"
 own_bash_record="${REPO_ROOT}/docs/reports/records/own-subject-bash/qa.md"
 payload="$(payload_bash "printf -- 'kind: qa-record\n' > ${own_bash_record}")"
 run_case_in_repo_root "path-ref-allow-own-record-plain-redirect-legal-write" 0 "" "$payload"
+
+# =========================================================================
+# Cases 55-58: gate-protection root resolution from CLAUDE_PROJECT_DIR
+# (contract: docs/proposals/2026-07-26-gate-root-from-project-dir.md).
+# =========================================================================
+
+# Case 55: CLAUDE_PROJECT_DIR points at an unrelated, empty directory (no
+# docs/specs/role-handoff-contract.md, not itself a git work-tree top-level)
+# while a Write targets this repo's real owned record tree -> expect refuse.
+# The root is INDETERMINATE and this must be a default-deny, not a silent
+# allow from "not this gate's business".
+unrelated_root="$(mktemp -d "${TMPDIR:-/tmp}/gate-test-unrelated.XXXXXX")"
+LIVE_WORKSPACES+=("$unrelated_root")
+real_owned_target="${REPO_ROOT}/docs/reports/records/root-resolution-subject/qa.md"
+payload="$(payload_write "$real_owned_target" $'kind: qa-record\n')"
+run_case "project-dir-unrelated-empty-dir-real-target-refused" 2 "" "$payload" "CLAUDE_PROJECT_DIR=${unrelated_root}"
+
+# Case 56: CLAUDE_PROJECT_DIR correctly points at this repo -> a legal write
+# to the agent's own record path under it is still enforced (allowed).
+own_record_56="${REPO_ROOT}/docs/reports/records/root-resolution-subject-56/qa.md"
+payload="$(payload_write "$own_record_56" $'kind: qa-record\n')"
+run_case "project-dir-correct-enforces-normally-allowed" 0 "" "$payload" "CLAUDE_PROJECT_DIR=${REPO_ROOT}"
+
+# Case 57: CLAUDE_PROJECT_DIR correctly points at this repo -> a write to
+# another role's record path under it is still refused.
+other_role_57="${REPO_ROOT}/docs/reports/records/root-resolution-subject-57/coding.md"
+payload="$(payload_write "$other_role_57" $'kind: build-record\n')"
+run_case "project-dir-correct-enforces-normally-refused" 2 "" "$payload" "CLAUDE_PROJECT_DIR=${REPO_ROOT}"
+
+# Case 58: CLAUDE_PROJECT_DIR unset -> falls back to the git top-level of
+# cwd. Invoked with cwd set to REPO_ROOT so the fallback resolves this repo;
+# a write to another role's record path is still refused under the
+# fallback-resolved root, proving the fallback enforces exactly as the
+# explicit CLAUDE_PROJECT_DIR path does.
+other_role_58="${REPO_ROOT}/docs/reports/records/root-resolution-subject-58/coding.md"
+payload="$(payload_write "$other_role_58" $'kind: build-record\n')"
+run_case_in_repo_root "project-dir-unset-git-toplevel-fallback-enforces" 2 "" "$payload" "CLAUDE_PROJECT_DIR="
 
 # --- tally -------------------------------------------------------------------
 

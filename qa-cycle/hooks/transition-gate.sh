@@ -38,21 +38,47 @@ esac
 
 command -v python3 >/dev/null 2>&1 || { echo "qa-cycle: python3 not found; refusing rather than allowing an unchecked write." >&2; exit 2; }
 
-# --- repo-local role-handoff contract ---------------------------------------
-# The handoff contract holds only within a single git repository. This gate
-# resolves exactly one root — the git root of the current working
-# directory — and looks for docs/specs/role-handoff-contract.md inside that
-# root only. No parent-directory walk, no reference to any sibling repo, no
-# comparison against another repo's git history or SHA: this rulebook is a
-# plugin installed into a work repo, and the only contract that can bind a
-# handoff-protocol action is the one that repo itself carries. Absence of
-# that file is an honest refusal, not a silent pass — see
-# docs/proposals/2026-07-26-repo-local-contract.md.
-if ! command -v git >/dev/null 2>&1 || ! git rev-parse --show-toplevel >/dev/null 2>&1; then
-  echo "qa-cycle: refused — this repo has no collaboration contract yet (not inside a git repository, so no root to resolve docs/specs/role-handoff-contract.md against). Refusing handoff-protocol actions rather than proceeding without one." >&2
+# --- gate-protection root resolution (contract: docs/proposals/2026-07-26-gate-root-from-project-dir.md) ---
+# root candidate: CLAUDE_PROJECT_DIR when set; otherwise the git top-level of
+# cwd. (This hook has no reliable access to the PreToolUse target path before
+# the JSON payload is parsed below, so — same as every other repo-local check
+# in this preamble, which already runs before payload parsing — the fallback
+# here is cwd's git top-level rather than the target path's.)
+#
+# The handoff contract, and the records-tree root used further down
+# (QA_CYCLE_REPO_ROOT), are both keyed off this one resolved root. No
+# parent-directory walk, no reference to any sibling repo, no comparison
+# against another repo's git history or SHA: this rulebook is a plugin
+# installed into a work repo, and the only contract that can bind a
+# handoff-protocol action is the one that repo itself carries.
+if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
+  _contract_repo_root="${CLAUDE_PROJECT_DIR%/}"
+else
+  if ! command -v git >/dev/null 2>&1 || ! git rev-parse --show-toplevel >/dev/null 2>&1; then
+    echo "qa-cycle: refused — this repo has no collaboration contract yet (CLAUDE_PROJECT_DIR is unset and this is not inside a git repository, so no root to resolve docs/specs/role-handoff-contract.md against). Refusing handoff-protocol actions rather than proceeding without one." >&2
+    exit 2
+  fi
+  _contract_repo_root="$(git rev-parse --show-toplevel)"
+fi
+
+# root VALIDITY (contract): the resolved root must be a plausible project
+# root — either a git work-tree top-level, or a directory that itself
+# carries docs/specs/role-handoff-contract.md. A CLAUDE_PROJECT_DIR pointing
+# at an unrelated or empty directory (neither) is INDETERMINATE and refused
+# outright, before any payload is even read — default-deny, never a silent
+# pass-through to a downstream check that might not apply to this root at
+# all.
+if ! {
+  [ -f "$_contract_repo_root/docs/specs/role-handoff-contract.md" ] \
+  || {
+    command -v git >/dev/null 2>&1 \
+    && [ -d "$_contract_repo_root" ] \
+    && [ "$(cd "$_contract_repo_root" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$_contract_repo_root" 2>/dev/null && pwd -P 2>/dev/null)" ]
+  }
+}; then
+  echo "qa-cycle: refused — the resolved project root ($_contract_repo_root) is not a recognizable project root (no docs/specs/role-handoff-contract.md there, and it is not a git work-tree top-level itself). Refusing rather than trusting an unvalidated root." >&2
   exit 2
 fi
-_contract_repo_root="$(git rev-parse --show-toplevel)"
 if [ ! -f "$_contract_repo_root/docs/specs/role-handoff-contract.md" ]; then
   echo "qa-cycle: refused — this repo has no collaboration contract yet (no docs/specs/role-handoff-contract.md at $_contract_repo_root). Refusing handoff-protocol actions rather than proceeding without one." >&2
   exit 2
