@@ -29,14 +29,18 @@ ws="${QA_WORKSPACE:-}"
 
 command -v python3 >/dev/null 2>&1 || exit 0
 
-found=0
-for dir in "$ws"/projects/*/; do
-  [ -d "$dir" ] || continue
-  slug="$(basename "$dir")"
-  state="$dir/state.md"
-  [ -f "$state" ] || continue
-
-  report="$(python3 - "$state" <<'PY'
+# The parser below is read into a variable by a heredoc at TOP LEVEL, then
+# passed to `python3 -c`, rather than being written as
+# `report="$(python3 - "$state" <<'PY' … PY)"`. Under bash 3.2 — the
+# /bin/bash every macOS ships — a quoted-delimiter heredoc nested inside
+# `$( … )` is NOT treated as literal while the closing paren is scanned for:
+# the parser still tracks quotes and parentheses inside the body. The single
+# apostrophe in "the spec's ... rule" in the body below was enough to make
+# this whole file fail to parse, so this SessionStart hook never ran at all and
+# every in-flight item stayed unreported — a silence indistinguishable from
+# "there is nothing in flight". `bash -n` catches a regression;
+# hooks/tests/parse-check.sh runs it.
+IFS='' read -r -d '' PY_SRC <<'PY' || true
 import re, sys
 path = sys.argv[1]
 try:
@@ -108,7 +112,15 @@ for item_id, state, severity, priority in items:
 for group in group_order:
     print("%s: %s" % (group, ", ".join(by_group[group])))
 PY
-)"
+
+found=0
+for dir in "$ws"/projects/*/; do
+  [ -d "$dir" ] || continue
+  slug="$(basename "$dir")"
+  state="$dir/state.md"
+  [ -f "$state" ] || continue
+
+  report="$(python3 -c "$PY_SRC" "$state")"
   [ -n "$report" ] || continue
 
   if [ "$found" -eq 0 ]; then
