@@ -24,3 +24,36 @@ input), which is duplication, not cancellation. No PreToolUse hooks exist in any
 plugin (signoff, stats, bugreport, testrun, regress, intake all register empty
 PreToolUse arrays) that could interact with trailer-gate's fix. No cancelling-pair
 composition regression reproduced.
+
+## before-landing — stance 2: guard-goes-silent-on-malformed-input
+
+Verdict: FINDING — an unparseable (shlex.split-invalid) `git commit` command string makes `is_git_commit_invocation()` return False, causing the gate to `allow()` (exit 0) silently instead of denying, directly contradicting the script's own documented contract ("an unparseable command ... all DENY (exit 2), never exit 0 silently").
+Kind: silent-failure
+Seed: branch `trailer-gate-git-c-commit-detection` vs main (517a5c3) — trailer-gate.sh / handbook-trigger-gate.sh new `is_git_commit_invocation()` tokenizer using `shlex.split(cmd)` wrapped in `try/except ValueError: return False`.
+
+### Reproduce
+```bash
+cd /tmp && rm -rf gate-test && mkdir gate-test && cd gate-test && git init -q
+mkdir -p docs/reports/records/unit1/qa
+printf 'loop_state: in-progress\n' > docs/reports/records/unit1/qa.md
+git add docs/reports/records/unit1/qa.md
+
+GATE=/home/jwjung/tokenmaxxxer/qa-agent-rulebook/qa-cycle/hooks/trailer-gate.sh
+python3 -c '
+import json
+cmd = "git commit -m \"unterminated"
+print(json.dumps({"tool_name":"Bash","tool_input":{"command":cmd}}))
+' > /tmp/payload.json
+
+CLAUDE_PROJECT_DIR=/tmp/gate-test bash "$GATE" < /tmp/payload.json
+echo "EXIT: $?"
+```
+
+### Observed
+```
+EXIT: 0
+```
+No stderr, no denial — the commit is allowed even though an in-progress qa unit (`docs/reports/records/unit1/qa.md`, `loop_state: in-progress`) is staged and the commit message carries no `Subject:`/`Kind:` trailer.
+
+### Expected
+Per the script's own header comment, an unparseable command should DENY (exit 2) fail-closed, the same as a malformed JSON payload or unreadable staged set. Instead `is_git_commit_invocation()` swallows the `shlex.split` `ValueError` and returns `False`, which the caller treats identically to "this Bash command definitely isn't `git commit`" — routing straight to `allow()` and skipping the trailer check entirely.
