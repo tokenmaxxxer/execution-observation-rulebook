@@ -122,19 +122,54 @@ PY
 # good"/thumbs-up style assent. We require an explicit verdict keyword
 # tied to explicit reasoning/scope words, not just the bare word.
 
+# Only an ASSERTED sentence can carry a verdict. A question is not a verdict
+# and neither is a hedge, but the greps below match a keyword anywhere in the
+# prompt, so both used to mint one. Measured 2026-07-27:
+#
+#   "Is item 42 a confirmed defect? I am not sure yet, do not do anything."
+#     -> minted transition: reproduced -> handed-off
+#
+# Interrogative and hedging sentences are dropped before matching. `speech`
+# replaces `$prompt` in every detection grep below, the priority one included.
+SPEECH_PY='
+import re, sys
+text = sys.stdin.read()
+DROP = re.compile(
+    u"(?i)\\b(not sure|unsure|unclear|no idea|maybe|might be|may be|i think|"
+    u"i wonder|could be|should we|shall we|do you|did anyone|has anyone)\\b"
+    u"|\\?\\s*$"
+    u"|확실치|확실하지|모르겠|인가요|일까요|아닌가")
+keep = [s for s in re.split(u"(?<=[.!?\\n])\\s+", text)
+        if s.strip() and not DROP.search(s.strip())]
+sys.stdout.write(u"\n".join(keep))
+'
+speech="$(printf '%s' "$prompt" | python3 -c "$SPEECH_PY" 2>/dev/null || printf '%s' "$prompt")"
+
 to=""
 case "$phase" in
   reproduced)
-    if echo "$prompt" | grep -qiE '\b(confirmed[- ]defect|confirm(ing)? (this|it) (as )?a defect|this is (a real|a genuine|a) defect|ruling this a defect|hand(ing)? (this|it) (off|over))\b'; then
-      to="handed-off"
-    elif echo "$prompt" | grep -qiE '\b(not a defect|not a bug|declin(e|ing) to call (this|it) a defect|no defect here)\b'; then
+    # The NEGATIVE readings are tested FIRST, and their pattern now covers the
+    # qualified forms. `confirmed[- ]defect` is a substring of "not a confirmed
+    # defect", so with the affirmative branch first a human saying the opposite
+    # of a defect verdict minted the defect verdict -- and the refusal was
+    # written into the token's own `phrase:` field as its evidence. Measured
+    # 2026-07-27:
+    #
+    #   "item 42 - to be clear, this is NOT a confirmed defect. Leave it alone."
+    #     -> minted transition: reproduced -> handed-off
+    #
+    # Read correctly, that sentence IS a verdict -- `not-a-defect` -- which is
+    # what it mints now.
+    if echo "$speech" | grep -qiE '\b(not (a |an )?(real |genuine |confirmed |actual )?(defect|bug)|declin(e|ing) to call (this|it) a defect|no defect here)\b'; then
       to="not-a-defect"
-    elif echo "$prompt" | grep -qiE "\b(won'?t[- ]fix|wont[- ]fix|accept(ing)? (this |it )?as a defect but (not|declin\w*) fix)\b"; then
+    elif echo "$speech" | grep -qiE "\b(won'?t[- ]fix|wont[- ]fix|accept(ing)? (this |it )?as a defect but (not|declin\w*) fix)\b"; then
       to="wont-fix"
+    elif echo "$speech" | grep -qiE '\b(confirmed[- ]defect|confirm(ing)? (this|it) (as )?a defect|this is (a real|a genuine|a) defect|ruling this a defect|hand(ing)? (this|it) (off|over))\b'; then
+      to="handed-off"
     fi
     ;;
   handed-off)
-    if echo "$prompt" | grep -qiE '\b(fix (has )?landed|the fix is in|fix (is )?merged|re-?verify|re-?run the (reproduction|repro))\b'; then
+    if echo "$speech" | grep -qiE '\b(fix (has )?landed|the fix is in|fix (is )?merged|re-?verify|re-?run the (reproduction|repro))\b'; then
       to="re-verifying"
     fi
     ;;
@@ -149,8 +184,8 @@ esac
 # keyword followed by one of the closed-set values. No bare value alone
 # (e.g. a stray "now" in unrelated prose) ever counts.
 priority_value=""
-if echo "$prompt" | grep -qiE '\bitem[[:space:]]+'"$item_id"'\b'; then
-  priority_value="$(echo "$prompt" | grep -ioE 'priority[[:space:]:]+(now|next|later|someday)\b' | tail -1 | grep -ioE '(now|next|later|someday)$' | tr 'A-Z' 'a-z' || true)"
+if echo "$speech" | grep -qiE '\bitem[[:space:]]+'"$item_id"'\b'; then
+  priority_value="$(echo "$speech" | grep -ioE 'priority[[:space:]:]+(now|next|later|someday)\b' | tail -1 | grep -ioE '(now|next|later|someday)$' | tr 'A-Z' 'a-z' || true)"
 fi
 
 if [ -z "$to" ] && [ -z "$priority_value" ]; then
