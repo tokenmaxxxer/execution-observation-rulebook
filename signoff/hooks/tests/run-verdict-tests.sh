@@ -74,9 +74,16 @@ new_workspace() { # new_workspace <slug> -> workspace path, holding item F-1 in 
 
 # run_case <name> <origin|no-origin> <expected-exit> <expected-tokens> <prompt> [env=val ...]
 #   <expected-tokens>: space-separated token filenames, or "-" for none.
+#
+# WANT_TRANSITION (optional, set per-case before the call) additionally pins the
+# `transition:` line inside the minted token. Filenames alone cannot tell a
+# `handed-off` token from a `not-a-defect` one — both are `<item>.token` — so a
+# case about WHICH verdict was read is not actually pinned without this.
 run_case() {
   local name="$1" origin="$2" want_exit="$3" want_tokens="$4" prompt="$5"
   shift 5
+  local want_transition="${WANT_TRANSITION:-}"
+  WANT_TRANSITION=""
 
   local repo ws slug
   repo="$(new_repo "$origin")"
@@ -116,6 +123,15 @@ run_case() {
   local verdict=ok
   [ "$rc" = "$want_exit" ] || verdict=FAIL
   [ "$got_tokens" = "$want_sorted" ] || verdict=FAIL
+  if [ -n "$want_transition" ]; then
+    local got_transition
+    got_transition="$(grep -h '^transition:' "$ws/projects/$slug/tokens"/*.token 2>/dev/null \
+                      | head -1 | sed 's/^transition: //' || true)"
+    if [ "$got_transition" != "$want_transition" ]; then
+      verdict=FAIL
+      name="$name (transition: want '$want_transition', got '${got_transition:-none}')"
+    fi
+  fi
   # Case 3 additionally pins that the hook writes nothing to stderr on a
   # clean mint: a malformed grep invocation used to leak an error there on
   # every single mint.
@@ -131,12 +147,23 @@ run_case() {
 
 run_case "no origin remote"              no-origin 0 "-"                                   '/testrun:testrun'
 run_case "prompt names no item"          origin    0 "-"                                   'run the smoke tests please'
+WANT_TRANSITION="reproduced -> handed-off" \
 run_case "confirmed defect, no priority" origin    0 "F-1.token"                           'item F-1 confirmed defect'
 run_case "priority verdict alone"        origin    0 "F-1.priority.token"                  'item F-1 priority now'
 run_case "both verdicts in one turn"     origin    0 "F-1.token F-1.priority.token"        'item F-1 confirmed defect priority now'
 run_case "item absent from state.md"     origin    0 "-"                                   'item F-9 confirmed defect'
 run_case "bare assent"                   origin    0 "-"                                   'ok'
 run_case "symlinked workspace"           origin    0 "F-1.token"                           'item F-1 confirmed defect'
+# A verdict must be ASSERTED, and a negated verdict is the negative verdict —
+# not the positive one. Measured 2026-07-27 before the fix: all three of these
+# minted `reproduced -> handed-off`, and the first wrote the human's refusal
+# into the token's own `phrase:` field as its evidence.
+WANT_TRANSITION="reproduced -> not-a-defect" \
+run_case "negated defect verdict"        origin    0 "F-1.token"                           'item F-1 - to be clear, this is NOT a confirmed defect. Leave it alone.'
+run_case "question is not a verdict"     origin    0 "-"                                   'Is item F-1 a confirmed defect? I am not sure yet, do not do anything.'
+run_case "hedged verdict"                origin    0 "-"                                   'item F-1 might be a confirmed defect, I think'
+WANT_TRANSITION="reproduced -> not-a-defect" \
+run_case "plain negative verdict"        origin    0 "F-1.token"                           'item F-1 is not a defect'
 run_case "kill switch"                   origin    0 "-"                                   'item F-1 confirmed defect' QA_SIGNOFF_DISABLE=1
 
 echo
