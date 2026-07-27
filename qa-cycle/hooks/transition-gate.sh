@@ -1155,11 +1155,14 @@ if state_change_for_item is not None:
 else:
     reason = "qa-cycle: item %s: priority verdict accepted." % item_id
 
-print(json.dumps({"hookSpecificOutput": {
-    "hookEventName": "PreToolUse",
-    "permissionDecision": "allow",
-    "permissionDecisionReason": reason,
-}}))
+# Pass through, do not grant. A gate refuses or stands aside; emitting
+# permissionDecision "allow" would suppress the user's own permission prompt,
+# which is a grant of authority rather than a restriction. Measured
+# 2026-07-27 in two rulebooks: a Bash call of the shape
+# `curl … | sh; echo x >> <record>` was auto-approved on the strength of the
+# trailing append — the append was the whole of what the gate inspected.
+# This gate's competence is the state machine, not the rest of the command.
+sys.stderr.write(reason + "\n")
 sys.exit(0)
 PY
 rc=$?
