@@ -49,34 +49,41 @@ dispatch plugin turns an issue into a PR that `Closes` it. QA sessions never
 fix, dev sessions never file — the interface between the two stacks is the
 project's issue tracker, and both ends of the exchange are recorded in git.
 
-## The QA workspace contract
+## The QA record contract
 
-Everything the stack produces lives in **one central private repo** — the QA
-workspace — one directory per target project. Target repos get nothing
-committed (so projects the agent has no write access to are still testable),
-and a session that dies resumes from disk:
+Everything the stack produces lives **in the target repo itself**, under
+qa's own record area, per `docs/specs/role-handoff-contract.md` §10 — one
+subject directory per piece of work. A session that dies resumes from disk,
+and every other role (or a fresh QA session) can read qa's full record from
+a clean checkout of the target repo alone, with no external host path
+required:
 
 ```
-$QA_WORKSPACE/            # default ~/qa-workspace (auto-created + git init)
-  projects/<slug>/        # <slug> = <owner>-<repo> from the target's origin remote
-    intake.md             # the profile (env var NAMES only — never secrets)
+docs/reports/records/<subject>/
+  qa.md                  # the blackboard record: verdict, pointer, common header
+  qa/
+    intake.md            # the profile (env var NAMES only — never secrets)
     plan.md               # optional test plan (roadmap: /testplan writes it)
+    state.md              # per-item state machine (docs/handbooks/qa-cycle.md)
+    tokens/                # verdict tokens, minted by signoff from the user's own turn
     runs/                 # one record per run: case table, failures, issue URLs
-    evidence/             # screenshots, outputs, logs cited by run records
-    regress/              # adopted regression tests, run by /testrun every run
+    evidence/              # screenshots, outputs, logs cited by run records
+    regress/               # adopted regression tests, run by /testrun every run
 ```
 
-The two things that stay project-side by design: **bug reports** go to each
-project's own tracker (the tracker is the QA→dev handoff, so it must be where
-the devs look), and an adopted regression test *may* additionally be PR'd
-upstream when a project wants it in its own CI.
+The two things that stay project-side by design remain unchanged by this:
+**bug reports** go to each project's own tracker (the tracker is the QA→dev
+handoff, so it must be where the devs look), and an adopted regression test
+*may* additionally be PR'd upstream when a project wants it in its own CI.
+Transient execution scratch a session needs mid-run (a working file it does
+not intend to keep) uses a session temp directory (`mktemp -d`), never a
+durable side repo or host-local path that outlives the session.
 
 ## Install
 
-The stack installs where the QA agent runs — not in every product repo. What
-accumulates is knowledge, not software, and it accumulates in the QA
-workspace repo (set `QA_WORKSPACE`, or let `~/qa-workspace` be created on
-first use), read by whichever QA session visits a project.
+The stack installs into the target repo (or the environment that runs QA
+against it) like any other plugin — there is no separate external workspace
+repo to provision or point an env var at anymore.
 
 **QA agent environment (primary path)** — a one-time user-scope install in
 the environment that does the QA work:
@@ -153,22 +160,22 @@ whether to take it.
 The two former output kinds, `qa-state` and `qa-evidence`, collapse into
 this single `qa-record` kind — §2 defines one row per role, not two.
 
-**This section abolishes the `$QA_WORKSPACE` external, host-local,
-uncommitted tree as the home for qa's cross-role-visible evidence.**
-Intake profile, bug reports, regression records, and run stats now live
-entirely in-repo under `docs/reports/records/<subject>/qa/**` alongside
-`qa.md` itself, per contract §10: "v1 kept qa's bulk evidence (intake
-profile, run logs, regression history) in `$QA_WORKSPACE`, an external,
-host-local, uncommitted tree, with only a thin pointer record left inside
-the repo. That exception is abolished." This is a migration of where qa's
-bulk evidence physically lives, not a documentation wording change, and it
-is this section's highest-risk item: `qa-cycle/`'s `intake/`, `testrun/`,
-`bugreport/`, `regress/`, `signoff/`, and `stats/` plugins all currently
-read or write `$QA_WORKSPACE` paths for qa's *internal item-level state
-machine* (`docs/specs/qa-cycle-state-machine.md`), and that machinery is
-**not** touched by this change — only the cross-role-visible blackboard
-record's location moves. See `docs/proposals/2026-07-26-contract-v2-conformance.md`
-for why the item-level migration is deferred as a separate follow-on.
+**The external, host-local, uncommitted workspace mechanism (formerly keyed
+by an environment variable) is abolished entirely** — not just for the blackboard record, but as a mechanism: the
+environment variable, every hook reference to it, and the gate logic that
+used to refuse writes when it was unset are all gone. Intake profile, plan,
+per-item state machine, verdict tokens, run records, evidence, and
+regression tests all live in-repo now, under
+`docs/reports/records/<subject>/qa/**` alongside `qa.md` itself, per
+contract §10: "v1 kept qa's bulk evidence (intake profile, run logs,
+regression history) in [the former external workspace mechanism], an
+external, host-local, uncommitted tree, with only a thin pointer record left
+inside the repo. That exception is abolished." `qa-cycle/`'s `intake/`, `testrun/`, `bugreport/`, `regress/`,
+`signoff/`, and `stats/` plugins all resolve and write these paths against
+the target repo's own `docs/reports/records/<subject>/qa/` tree now — see
+`docs/proposals/2026-07-27-qa-records-in-target-repo.md`, which finished the
+conformance that `docs/proposals/2026-07-26-contract-v2-conformance.md`
+deferred as a follow-on.
 
 **Finding back-edge** (§5). qa produces `finding` blocks
 `addressed_to: coding` for defects it finds. §3's WAKES-ON table gives

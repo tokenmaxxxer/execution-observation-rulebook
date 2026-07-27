@@ -20,9 +20,9 @@ trap __fc EXIT
 #
 # Fails closed: refusal is the default outcome of this script. Every path
 # that is not an affirmative match against the transition table — unreadable
-# stdin, a malformed payload, a missing/malformed state file, an unset
-# QA_WORKSPACE, a missing or mismatched verdict token, an ambiguous write
-# touching more than one item's state — exits 2. Allow (exit 0) is reached
+# stdin, a malformed payload, a missing/malformed state file, a missing or
+# mismatched verdict token, an ambiguous write touching more than one item's
+# state — exits 2. Allow (exit 0) is reached
 # only via the single explicit success path at the bottom of the embedded
 # Python, after the attempted (item, from -> to) has been matched against
 # the table and, for human-actor rows, after a matching unconsumed token has
@@ -100,7 +100,7 @@ fi
 
 # --dump-facts is a read-only introspection path: it prints the same
 # TABLE/FIELDS structures the decision logic below branches on, as JSON,
-# and exits 0. It touches no state file, no token, no QA_WORKSPACE, and
+# and exits 0. It touches no state file and no token, and
 # reads no stdin — it is not reachable from, and shares no code path with,
 # any write decision. See qa-cycle/hooks/tests/directive-drift-check.sh,
 # which is the only consumer.
@@ -144,15 +144,6 @@ if [ "$dump_facts" = 1 ]; then
   fi
 fi
 
-# The QA_WORKSPACE-unset refusal used to live here, unconditionally, before
-# any payload was even read — that was correct when this gate governed only
-# the item-level state.md machine under $QA_WORKSPACE. It is no longer
-# correct now that this gate also governs the in-repo blackboard record at
-# docs/reports/records/<subject>/qa.md and qa/** (contract v2 §10 abolishes
-# $QA_WORKSPACE for that path specifically). Whether QA_WORKSPACE is
-# required now depends on which path the write targets, which is only known
-# after the payload is parsed — so this check moved into the Python below,
-# and only applies once a write is determined to target the state.md shape.
 if [ "$dump_facts" = 1 ]; then
   payload=""
 else
@@ -160,7 +151,7 @@ else
 fi
 
 set +e
-QA_CYCLE_PAYLOAD="$payload" QA_CYCLE_WORKSPACE="${QA_WORKSPACE:-}" QA_CYCLE_REPO_ROOT="$_contract_repo_root" QA_CYCLE_DUMP_FACTS="$dump_facts" python3 <<'PY'
+QA_CYCLE_PAYLOAD="$payload" QA_CYCLE_REPO_ROOT="$_contract_repo_root" QA_CYCLE_DUMP_FACTS="$dump_facts" python3 <<'PY'
 import json
 import os
 import posixpath
@@ -242,8 +233,8 @@ FIELDS = [
 ]
 
 if os.environ.get("QA_CYCLE_DUMP_FACTS") == "1":
-    # Read-only: nothing above this point touches state.md, a token file,
-    # or QA_WORKSPACE, and nothing below this line runs.
+    # Read-only: nothing above this point touches state.md or a token file,
+    # and nothing below this line runs.
     print(json.dumps({"transitions": TABLE, "fields": FIELDS}))
     sys.exit(0)
 
@@ -494,11 +485,16 @@ else:
     # about it. Distinct from the malformed-shape refusals above and below.
     not_applicable()
 
-ws = os.environ.get("QA_CYCLE_WORKSPACE", "")
-ws_real = posixpath.normpath(os.path.realpath(ws).replace("\\", "/"))
 path_norm = path.replace("\\", "/")
 path_abs = posixpath.normpath(path_norm if posixpath.isabs(path_norm) else posixpath.join(os.getcwd(), path_norm))
 path_real = posixpath.normpath(os.path.realpath(path_abs).replace("\\", "/"))
+
+# project_dir is set below, only when this write targets exactly
+# docs/reports/records/<subject>/qa/state.md (the item-level state machine's
+# one governed file). Any other path — including every other file under
+# qa/** — either allow()s or refuse()s inside the records-tree block below
+# and never reaches the item-level machine at all.
+project_dir = None
 
 
 def attempted_content_generic():
@@ -514,18 +510,22 @@ def attempted_content_generic():
     return c
 
 
-# --- blackboard record: docs/reports/records/<subject>/qa.md and qa/** -----
-# Contract v2 §10 abolishes $QA_WORKSPACE as the home for qa's
-# cross-role-visible evidence; the blackboard record itself was never
-# $QA_WORKSPACE-rooted even under v1 (README.md's PRODUCES table already put
-# the pointer at docs/reports/records/<subject>/qa.md in-repo). This path is
-# resolved and containment-checked against the *repo root* already resolved
-# above for the contract-presence check (_contract_repo_root, passed through
-# as QA_CYCLE_REPO_ROOT), never against $QA_WORKSPACE — see
-# docs/proposals/2026-07-26-contract-v2-conformance.md item 2. This check
-# runs, and can allow or refuse, whether or not $QA_WORKSPACE is set: qa's
-# item-level state.md machine (below) is a separate, still-$QA_WORKSPACE-
-# rooted concern, untouched by this addition.
+# --- qa's record area: docs/reports/records/<subject>/qa.md and qa/** ------
+# Contract v2 §10 is qa's sole record store now: the blackboard record
+# (qa.md) and every piece of durable QA evidence — intake, plan, run
+# records, evidence, state.md, tokens/ — all live under this one repo-root-
+# resolved tree. There is no second, external, host-local store any of this
+# ever falls back to. This path is resolved and containment-checked against
+# the *repo root* already resolved above for the contract-presence check
+# (_contract_repo_root, passed through as QA_CYCLE_REPO_ROOT).
+#
+# A write to qa.md gets the kind:/DEPENDS-ON structural checks below and
+# then allow()s. A write to exactly qa/state.md falls through to the
+# item-level transition machine further down (project_dir is set here and
+# left unset for every other path). A write to any other file under qa/**
+# (intake.md, plan.md, runs/**, target.md, tokens/**, and any other
+# evidence) is allow()d here directly — qa already owns this whole subtree;
+# there is no further structural check this gate applies to those files.
 _repo_root = os.environ.get("QA_CYCLE_REPO_ROOT", "")
 _repo_root_real = posixpath.normpath(os.path.realpath(_repo_root).replace("\\", "/")) if _repo_root else ""
 if _repo_root_real:
@@ -596,26 +596,20 @@ if _repo_root_real:
                         "checkable case only (contract §14)." % (_upstream_kind, _upstream_sha, _upstream_path)
                     )
 
-            allow()
+            if _second == "qa" and len(_rparts) == 3 and _rparts[2] == "state.md":
+                # The one file under qa/** the item-level transition machine
+                # governs. Set project_dir and fall through to that machine
+                # below instead of allow()ing here directly.
+                project_dir = _records_root + "/" + _subject + "/qa"
+            else:
+                allow()
 
-# --- item-level state.md machine (unchanged: still $QA_WORKSPACE-rooted) ---
-# Only state.md writes are this gate's business, and only ones inside the
-# workspace root — never trust a path by name alone.
-if ws == "":
-    # QA_WORKSPACE is required for this path only now — the blackboard
-    # record path above already ran and returned (allow/refuse/fall
-    # through) without needing it. A write that reaches this point is not
-    # the blackboard record, so the item-level machine's own requirement
-    # for a workspace root still applies exactly as before.
-    refuse("qa-cycle: refused — QA_WORKSPACE is unset. The gate has no state file to read, so it cannot verify this write is a legal transition. Set QA_WORKSPACE to the QA workspace root.")
-if not (path_real == ws_real or path_real.startswith(ws_real + "/")):
+# --- item-level state.md machine --------------------------------------
+# Governs exactly docs/reports/records/<subject>/qa/state.md. project_dir is
+# set above only when this write targets that one file; any other path
+# either allow()d or refuse()d already and never reaches here.
+if project_dir is None:
     not_applicable()
-
-rel = path_real[len(ws_real) + 1:]
-parts = rel.split("/")
-if len(parts) != 3 or parts[0] != "projects" or parts[2] != "state.md":
-    not_applicable()
-slug = parts[1]
 
 # An item id is validated by allow-list, at the point it is read, before it
 # is used in any path or any comparison: ASCII letters, digits, hyphen, and
@@ -627,31 +621,18 @@ slug = parts[1]
 # recorded in docs/reports/2026-07-31-hunt-item-axis-enforcement.md.
 ITEM_ID_RE = re.compile(r"^(?!-)[A-Za-z0-9_-]{1,64}$")
 
-# Same allow-list discipline for the project identifier (<owner>-<repo>),
-# which comes from the same untrusted surface (the write's file_path) and
-# has the same escape if trusted blindly.
-PROJECT_ID_RE = re.compile(r"^(?!-)[A-Za-z0-9_-]{1,128}$")
-
-# The project identifier comes from the same untrusted surface (the
-# write's file_path) as the item id and gets the same two checks: an
-# allow-list at the point it is read, before it is used in any path, and —
-# independently — the path built from it is resolved to a real path and
-# containment-checked against the workspace root before use.
-if not PROJECT_ID_RE.match(slug):
-    refuse("qa-cycle: refused — the project path in this write is not a recognized project identifier. Refusing rather than trusting an unvalidated value in a path.")
-
-project_dir = posixpath.join(ws_real, "projects", slug)
 state_path = posixpath.join(project_dir, "state.md")
 tokens_dir = posixpath.join(project_dir, "tokens")
 
-# Resolve first, then check containment — a check performed before
-# resolution proves nothing. Belt-and-braces on top of the allow-list
-# above: even though slug was built from an already-resolved, already
-# contained path_real, re-resolve and re-check the path actually used from
-# here on.
+# project_dir was built from _subject, which was itself read out of
+# path_real (an already-resolved, already-containment-checked path under
+# _records_root). Belt-and-braces on top of that: re-resolve project_dir
+# and re-check its containment against _records_root before it is used for
+# any further read or write below.
 project_dir_real = posixpath.normpath(os.path.realpath(project_dir).replace("\\", "/"))
-if not (project_dir_real == ws_real or project_dir_real.startswith(ws_real + "/")):
-    refuse("qa-cycle: refused — the resolved project directory for this write escapes the workspace root. Refusing rather than reading or writing outside it.")
+if not (project_dir_real == _records_root or project_dir_real.startswith(_records_root + "/")):
+    refuse("qa-cycle: refused — the resolved record directory for this write escapes docs/reports/records/. Refusing rather than reading or writing outside it.")
+project_dir = project_dir_real
 
 # --- per-item record parsing -------------------------------------------
 # state.md holds a chain of item blocks. Each block is its own
@@ -899,16 +880,13 @@ if state_change_for_item is not None:
     # the transition to the declaration's *content* (a valid, non-empty
     # entry_point and label), not to who wrote it.
     if "target" in requires:
-        # Same two-part path treatment every other gate-checked path in
-        # this script gets: the project identifier was already allow-list
-        # validated above (PROJECT_ID_RE) before it was used to build
-        # project_dir; independently, the path built from it here is
-        # resolved to a real path and containment-checked against the
-        # workspace root before it is opened.
+        # project_dir was already resolved and containment-checked against
+        # _records_root above; independently, the path built from it here is
+        # resolved to a real path and re-checked before it is opened.
         target_path = posixpath.join(project_dir, "target.md")
         target_path_real = posixpath.normpath(os.path.realpath(target_path).replace("\\", "/"))
-        if not (target_path_real == ws_real or target_path_real.startswith(ws_real + "/")):
-            refuse("qa-cycle: refused — the resolved target declaration path for this write escapes the workspace root. Refusing rather than reading outside it.")
+        if not (target_path_real == _records_root or target_path_real.startswith(_records_root + "/")):
+            refuse("qa-cycle: refused — the resolved target declaration path for this write escapes docs/reports/records/. Refusing rather than reading outside it.")
 
         if not os.path.exists(target_path_real):
             refuse(

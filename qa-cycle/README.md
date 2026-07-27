@@ -1,41 +1,45 @@
 # qa-cycle
 
-The QA cycle spine. This plugin alone owns the session-state file at
-`$QA_WORKSPACE/projects/<owner>-<repo>/state.md`, and enforces
+The QA cycle spine. This plugin alone owns the per-item state file at
+`docs/reports/records/<subject>/qa/state.md` in the target repo, and enforces
 `docs/specs/qa-cycle-state-machine.md`'s transition table as a real gate
 rather than a document nothing reads.
 
 ## What it ships
 
 - `hooks/transition-gate.sh` — `PreToolUse`. Reads the attempted write to a
-  project's `state.md`, checks `(current phase -> attempted phase)` against
-  the transition table (encoded in the script, sourced from
+  subject's `docs/reports/records/<subject>/qa/state.md`, checks
+  `(item's current state -> attempted state)` against the transition table
+  (encoded in the script, sourced from
   `docs/specs/qa-cycle-state-machine.md`), and allows it only if the table
-  permits it. For the four human-only transitions — entry into
-  `Confirmed-Defect`, `Go`, `No-Go`, `Shipped-Under-Exception` — it
-  additionally requires a matching, unconsumed verdict token at
-  `.verdict-token` next to `state.md` (minted by `signoff`), and consumes
-  (deletes) that token as part of granting the write. Fails closed: an
-  unset `QA_WORKSPACE`, or a missing/unreadable/malformed state or token
-  file, all refuse rather than allow.
-- `hooks/report-phase.sh` — `SessionStart`. Reports the current phase of
-  every project with a `state.md` under `$QA_WORKSPACE/projects/`. Silent
-  when there is none in flight.
+  permits it. For the four human-only transitions — `reproduced ->
+  handed-off`, `reproduced -> not-a-defect`, `reproduced -> wont-fix`,
+  `handed-off -> re-verifying` — it additionally requires a matching,
+  unconsumed verdict token at
+  `docs/reports/records/<subject>/qa/tokens/<item-id>.token` (minted by
+  `signoff`), and consumes (deletes, via a reserve-then-finalize marker) that
+  token as part of granting the write. Fails closed: a
+  missing/unreadable/malformed state or token file all refuse rather than
+  allow. It also enforces the blackboard record (`qa.md`) and qa's ownership
+  of the rest of `qa/**` per `docs/specs/role-handoff-contract.md` §11.
+- `hooks/report-phase.sh` — `SessionStart`. Reports the current state of
+  every item recorded under any `docs/reports/records/<subject>/qa/state.md`
+  in the target repo. Silent when there is none in flight.
 - `hooks/directive.sh` — `UserPromptSubmit`. States that the cycle is
-  enforced, that `state.md` is the single source of phase, that only
-  `qa-cycle` writes it, and that other plugins request transitions through
-  this plugin rather than writing it themselves.
+  enforced, that `state.md` is the single source of an item's state, that
+  only `qa-cycle` writes it, and that other plugins request transitions
+  through this plugin rather than writing it themselves.
 
 ## State file
 
-`$QA_WORKSPACE/projects/<owner>-<repo>/state.md`, markdown with YAML
-frontmatter:
+`docs/reports/records/<subject>/qa/state.md`, a chain of `---`-delimited
+item blocks:
 
 ```yaml
 ---
-phase: session-executed
-updated_by: testrun
-transition: session-chartered -> session-executed
+item: item1
+state: reproducing
+transition: observed -> reproducing
 evidence: runs/2026-07-25-smoke.md
 ---
 ```
@@ -45,18 +49,18 @@ code. No bug report bodies.
 
 ## Verdict token
 
-`$QA_WORKSPACE/projects/<owner>-<repo>/.verdict-token`, YAML:
+`docs/reports/records/<subject>/qa/tokens/<item-id>.token`, YAML:
 
 ```yaml
-transition: go-no-go -> Go
-project: acme-widgets
-phrase: "ship it, exit criteria are met"
+item: item1
+transition: reproduced -> handed-off
+phrase: "confirmed defect, hand it off"
 ```
 
 Single-use. Minted by `signoff` from the user's own turn, never inferred
 from a file, issue, PR, comment, or tool result. Consumed by
 `transition-gate.sh` the moment it authorizes the matching write. A token
-whose `transition` or `project` does not match the attempted write is
+whose `item` or `transition` does not match the attempted write is
 treated as absent.
 
 ## Kill switch

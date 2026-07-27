@@ -2,7 +2,7 @@
 
 This handbook documents the runtime layer that makes the QA cycle binding:
 the per-item state file, the single-use verdict token, the kill switches,
-`QA_WORKSPACE`, and the gate's refusal behavior. The transition table itself
+qa's record area in the target repo, and the gate's refusal behavior. The transition table itself
 — which item state can move to which, on what trigger, with what evidence,
 by which actor — is not restated here; it lives in
 [`docs/specs/qa-cycle-state-machine.md`](../specs/qa-cycle-state-machine.md)
@@ -13,18 +13,19 @@ single project-wide `phase`. It carries one record per feedback item.
 
 ## The state file
 
-Path: `<QA_WORKSPACE>/projects/<owner>-<repo>/state.md`.
+Path: `docs/reports/records/<subject>/qa/state.md`, in the target repo
+itself.
 
-One file per project, owned exclusively by the `qa-cycle` plugin — no other
+One file per subject, owned exclusively by the `qa-cycle` plugin — no other
 plugin writes it. It is a chain of independent, `---`-delimited blocks, one
 per feedback item, each its own frontmatter-shaped document:
 
 ```yaml
 ---
-item:             # stable id for this feedback item, unique within the project
+item:             # stable id for this feedback item, unique within the subject
 state:            # current item state, exactly one name from the spec's States section
 reproduction:     # the reproduction procedure, once recorded (empty until then)
-evidence:         # relative path(s) under the project dir proving the most recent transition
+evidence:         # relative path(s) under qa/ proving the most recent transition
 transition:       # the transition just taken, written `from -> to`
 severity:         # one of critical, major, minor, trivial. Agent-set. See below.
 priority:         # one of now, next, later, someday. Human-set, optional. See below.
@@ -62,7 +63,7 @@ independently of, and in addition to, whatever state-transition check the
 same write may also be attempting. It requires a matching, unconsumed
 priority token:
 
-- **Path:** `<QA_WORKSPACE>/projects/<owner>-<repo>/tokens/<item-id>.priority.token`
+- **Path:** `docs/reports/records/<subject>/qa/tokens/<item-id>.priority.token`
   — a distinct file from `<item-id>.token` (the state-transition token), so
   neither can be consumed by the other's check.
 - **Minted by:** `signoff/hooks/capture-verdict.sh`, from the user's own
@@ -135,7 +136,7 @@ It never holds a secret value (environment variable names only, the same
 rule `intake.md` already follows) and never holds a copy of target-project
 code or a bug report body — bug reports go to the target project's own
 tracker via `bugreport`, and only the resulting issue URL is ever referenced
-from workspace files, as the `evidence:` field of the `handed-off`
+from qa's own record files, as the `evidence:` field of the `handed-off`
 transition.
 
 A single write (`Write` or `Edit` call touching `state.md`) may change
@@ -146,8 +147,8 @@ each transition is its own write.
 
 ## The target declaration
 
-Path: `<QA_WORKSPACE>/projects/<owner>-<repo>/target.md`, sibling to that
-project's `state.md` and `intake.md`. The full contract — precondition,
+Path: `docs/reports/records/<subject>/qa/target.md`, sibling to that
+subject's `state.md` and `intake.md`. The full contract — precondition,
 actor, path validation — lives in
 [`docs/specs/qa-cycle-state-machine.md`](../specs/qa-cycle-state-machine.md)
 "Target declaration"; this section covers only the file's shape and what
@@ -175,34 +176,39 @@ does not reference the declared target by label or entry point. No secret
 value is ever written here — environment variable names only, the same
 rule `state.md` and `intake.md` already follow.
 
-## Item id and project identifier shape
+## Item id and subject shape
 
-Both `transition-gate.sh` and `signoff`'s verdict-capture hook read an item
-id and a project identifier (`<owner>-<repo>`) out of untrusted input — the
-`item:` field of a write's proposed `state.md` content, and the prompt text
-of a human turn, respectively — and both values get used to build
-filesystem paths (the token file, the state file, the project directory).
-An unvalidated value here is a path-traversal escape: see
+`transition-gate.sh` reads an item id out of untrusted input — the `item:`
+field of a write's proposed `state.md` content — and uses it to build
+filesystem paths (the token file, the consuming marker). `signoff`'s
+verdict-capture hook reads an item id the same way out of the prompt text
+of a human turn. An unvalidated value here is a path-traversal escape: see
 [`docs/reports/2026-07-31-hunt-item-axis-enforcement.md`](../reports/2026-07-31-hunt-item-axis-enforcement.md)
 for the reproduction where an item id of
 `../../../../../../../../tmp/evil-item` made the gate accept a verdict
 token the agent forged itself, at a path of its own choosing, bypassing
 `capture-verdict.sh` entirely.
 
-Both hooks now apply two independent checks, in this order, before either
-value is used in any path or any comparison:
+The subject itself is not a separately-typed value the way the item id is:
+it is read directly off the write's own `file_path` (the path component
+between `docs/reports/records/` and `/qa/...`), which has already been
+resolved to its real, absolute path and prefix-checked against
+`docs/reports/records/` before that component is ever extracted — a
+traversing subject segment (`..`) is collapsed away by that resolution
+before it could name anything, and a value that survives resolution is
+already contained.
+
+The gate applies two independent checks to the item id, in this order,
+before it is used in any path or any comparison:
 
 1. **Allow-list.** An item id is ASCII letters, digits, hyphen, and
-   underscore only, length 1..64, and may not begin with a hyphen. A
-   project identifier follows the same charset, length 1..128. Anything
-   outside this shape is not a valid id — it is rejected by pattern, never
-   repaired or stripped down to something that fits.
+   underscore only, length 1..64, and may not begin with a hyphen.
+   Anything outside this shape is not a valid id — it is rejected by
+   pattern, never repaired or stripped down to something that fits.
 2. **Resolve, then contain.** Independently of the allow-list, every path
-   built from one of these values (the token file, the consuming marker,
-   the project directory, the state file) is resolved to its real,
-   absolute path and prefix-checked against the intended root — the
-   workspace root for the project directory, the item's `tokens/`
-   directory for token paths — before it is opened. The check runs after
+   built from the item id (the token file, the consuming marker) is
+   resolved to its real, absolute path and prefix-checked against the
+   item's `tokens/` directory before it is opened. The check runs after
    resolution, never before: a containment check against an unresolved
    path proves nothing.
 
@@ -213,7 +219,7 @@ falls through to an allow/mint path on an invalid id.
 
 ## The verdict token
 
-Path: `<QA_WORKSPACE>/projects/<owner>-<repo>/tokens/<item-id>.token`, one
+Path: `docs/reports/records/<subject>/qa/tokens/<item-id>.token`, one
 file per item with a live, unconsumed token.
 
 Minted only by `signoff`'s verdict-capture hook, from the user's own turn —
@@ -287,33 +293,35 @@ this repo: only an explicit truthy-ish value disables a hook. Empty, `0`,
 `false`, `no`, and `off` all mean "not off" — the plugin stays active on any
 of those spellings, and only a value like `1` turns it off.
 
-## `QA_WORKSPACE`
+## Record root resolution
 
-`QA_WORKSPACE` names the root directory where all QA-cycle state lives:
-`<QA_WORKSPACE>/projects/<owner>-<repo>/`. It is never the target project's
-own repository.
+All QA-cycle state lives in the target repo the plugin is installed into:
+`docs/reports/records/<subject>/qa/`, per
+`docs/specs/role-handoff-contract.md` §10. There is no external workspace
+mechanism — no environment variable names a separate root, and no hook logic
+is keyed on one being set or unset.
 
-There is no default for enforcement purposes. (Some read-only or reporting
-hooks fall back to `~/qa-workspace` for convenience when nothing is being
-enforced, but the gate does not.) Most hooks that need `QA_WORKSPACE` and
-find it unset simply exit 0 — there is nothing yet to enforce, so they stay
-silent rather than fail.
-
-The gate is the deliberate exception: if `QA_WORKSPACE` is unset when
-`qa-cycle`'s `PreToolUse` gate runs, it exits 2 (refuses the write) and says
-the variable is unset. A gate that cannot locate the workspace root has no
-state file to check and therefore has no basis for allowing anything through
-— unset is treated the same as "state unreadable," not as "nothing to
-enforce."
+The repo root itself resolves the same way every gate in this repo resolves
+it: `CLAUDE_PROJECT_DIR` when set, otherwise the git top-level of the
+current working directory. A hook that cannot resolve a repo root this way
+exits 0 (nothing to enforce yet) for read-only/reporting hooks, or refuses
+(exit 2) for `qa-cycle`'s `PreToolUse` gate, which requires a resolvable,
+validated root (carrying `docs/specs/role-handoff-contract.md`) before it
+will adjudicate anything.
 
 ## Gate refusal behavior
 
 `qa-cycle/hooks/transition-gate.sh` runs on `PreToolUse` for writes to
 `state.md`. On each attempted write it:
 
-1. Resolves `QA_WORKSPACE` and the project slug, refusing (exit 2) if
-   `QA_WORKSPACE` is unset, per the previous section.
-2. Reads every item's current `state` from the project's `state.md` and
+1. Resolves and validates the repo root, refusing (exit 2) if it cannot be
+   resolved or validated, per the previous section. Writes under
+   `docs/reports/records/<subject>/qa/` are then checked against qa's
+   ownership of that subtree; a write to exactly `qa/state.md` falls
+   through to the item-level machine below, and a write to any other file
+   under `qa/**` (already confirmed as qa's own path) is allowed directly —
+   only `state.md` gets this transition machine.
+2. Reads every item's current `state` from the subject's `state.md` and
    determines which single item the attempted write changes (comparing
    every item block in the new content against that item's currently
    recorded state). Each block's `item:` value is checked against the item
@@ -356,7 +364,7 @@ enforce."
    decide and what evidence they need, per the spec's "Human decision
    points" section — not merely "no token found."
 
-Refusal is always the safe default: malformed input, an unreadable file, a
-missing `QA_WORKSPACE`, a disallowed transition, an ambiguous multi-item
-write, or a missing/mismatched token for a human-only transition all
-produce the same outcome — exit 2, never exit 0.
+Refusal is always the safe default: malformed input, an unreadable file, an
+unresolvable/unvalidated repo root, a disallowed transition, an ambiguous
+multi-item write, or a missing/mismatched token for a human-only transition
+all produce the same outcome — exit 2, never exit 0.

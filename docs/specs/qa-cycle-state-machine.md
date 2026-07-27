@@ -106,7 +106,7 @@ attaches to `reproducing` as a DESTINATION STATE, not to a single row: every
 row in the transition table above whose `To` is `reproducing` carries it —
 today that is both `observed -> reproducing` and `re-verifying ->
 reproducing`. The gate refuses either transition whenever
-`<QA_WORKSPACE>/projects/<owner>-<repo>/target.md` is absent, unreadable,
+`docs/reports/records/<subject>/qa/target.md` is absent, unreadable,
 malformed, or missing a required field (a single non-empty `label` and a
 single non-empty `entry_point`), and whenever the attempted write's own
 run-record evidence does not reference the declared target (by label or
@@ -123,24 +123,24 @@ bespoke enforcement path and not a per-row special case a future row into
   already uses (agent-discoverable, not human-locked, no verdict token).
   The target is a fact to be recorded once at the start of QA work, not a
   subjective judgment call like `priority`.
-- **Path:** `<QA_WORKSPACE>/projects/<owner>-<repo>/target.md`, sibling to
-  that project's `state.md` and `intake.md`, under the same workspace root
-  `transition-gate.sh` already resolves and prefix-checks. Path resolution
-  reuses the same `PROJECT_ID_RE` allow-list and independent
-  resolve-then-contain check already applied to `state_path`/`tokens_dir`.
+- **Path:** `docs/reports/records/<subject>/qa/target.md`, sibling to
+  that subject's `state.md` and `intake.md`, under the same
+  `docs/reports/records/` root `transition-gate.sh` already resolves and
+  prefix-checks. Path resolution reuses the same resolve-then-contain check
+  already applied to `state_path`/`tokens_dir`.
 - **Shape:** a single frontmatter-shaped block —
   `label`, `entry_point`, `env_names` (names only, never values, per the
   rule `intake.md` and `state.md` already follow).
 
 ## Persisted item state
 
-All state lives under `$QA_WORKSPACE/projects/<owner>-<repo>/` (default workspace root `~/qa-workspace` if `$QA_WORKSPACE` is unset), never in the target repo, and never as a copy of target code. Per the existing plugins' policy: env vars are recorded by name only, never by value.
+All state lives under `docs/reports/records/<subject>/qa/` in the target repo itself, per `docs/specs/role-handoff-contract.md` §10, and never as a copy of target code. Per the existing plugins' policy: env vars are recorded by name only, never by value.
 
 - Each feedback item's record carries, at minimum: item id, current state, the reproduction procedure once recorded (this is what makes `re-verifying` reachable at all — without it the state is unreachable in practice), the evidence for the most recent transition, `severity` (agent-set, required to reach `reproduced`, see "Severity and priority" above), and `priority` (human-set, optional, token-gated when changed). It carries no bug report body and no target-project code; those live in the target project's own tracker.
 - `intake.md` — a reader can reconstruct: tracker repo, issue template path, labels, app launch/stop/ready commands, test framework and directory, env var names (unset values), and report language. Every item record reads this profile.
 - `runs/<YYYY-MM-DD>-<slug>.md` — the session record a `reproducing`/`reproduced` attempt is logged against; carries the app version/commit under test and the evidence pointers items cite.
 - `evidence/<item-id>/` — holds the screenshots/log excerpts a reproduction procedure references; a reader can reconstruct what was actually observed, not just the verdict.
-- Filed defects themselves live in the **target project's own tracker**, not in qa-workspace — the `handed-off` transition's evidence points at whatever the target project uses to track the handoff (e.g. an issue URL), but the qa-workspace item record never duplicates the defect's body or code.
+- Filed defects themselves live in the **target project's own tracker**, not in qa's record area — the `handed-off` transition's evidence points at whatever the target project uses to track the handoff (e.g. an issue URL), but qa's own item record never duplicates the defect's body or code.
 
 ## Ownership map
 

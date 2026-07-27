@@ -3,6 +3,10 @@
 # real fixture files, one case at a time, and asserts on the observed exit
 # code (and, where the gate emits a refusal message, that the message is
 # non-empty). See qa-cycle/hooks/tests/README.md to run this.
+#
+# Fixtures live under this repo's own
+# docs/reports/records/<subject>/qa/state.md tree — the gate has no external
+# workspace concept anymore (docs/proposals/2026-07-27-qa-records-in-target-repo.md).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,12 +24,13 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 # override or unset it via extra_env / GATE_ENV_CLEAR as needed.
 export CLAUDE_PROJECT_DIR="$REPO_ROOT"
 
-# `env` inherits the caller's environment, so a case that means "unset" must
-# actually remove the variable — omitting it from env_args only leaves
-# whatever the developer's shell exports, and every machine that runs this
-# rulebook has QA_WORKSPACE set. Both variables the gate reads are cleared
-# here and re-added per case, so a case's environment is what it declares.
-GATE_ENV_CLEAR=(-u QA_WORKSPACE -u QA_CYCLE_DISABLE)
+# `env` inherits the caller's environment, so a case that means "disabled"
+# must actually remove QA_CYCLE_DISABLE — omitting it from env_args only
+# leaves whatever the developer's shell exports. Cleared here and re-added
+# per case, so a case's environment is what it declares. The gate no longer
+# reads any workspace env var at all — every fixture path below lives under
+# REPO_ROOT/docs/reports/records/<subject>/qa/.
+GATE_ENV_CLEAR=(-u QA_CYCLE_DISABLE)
 
 # bash 3.2 (macOS's /bin/bash) treats "${arr[@]}" on an *empty* array as a
 # reference to an unbound variable under `set -u`, so every expansion of a
@@ -45,6 +50,14 @@ cleanup_all() {
       rm -rf "$ws"
     fi
   done
+  # Belt-and-braces on top of LIVE_WORKSPACES: every subject new_workspace()
+  # mints is named gate-test-*, and LIVE_WORKSPACES is populated from inside
+  # a function invoked via command substitution (`ws="$(new_workspace)"`),
+  # which runs in a subshell — appends made there never reach this
+  # function's copy of the array. Sweep by the fixed naming convention too,
+  # so a subject dir never survives this script writing it into this repo's
+  # own docs/reports/records/ tree.
+  rm -rf "${REPO_ROOT}"/docs/reports/records/gate-test-* 2>/dev/null || true
   return 0
 }
 trap cleanup_all EXIT
@@ -52,10 +65,16 @@ trap cleanup_all EXIT
 # --- fixture helpers --------------------------------------------------------
 
 new_workspace() {
-  local ws
-  ws="$(mktemp -d "${TMPDIR:-/tmp}/gate-test.XXXXXX")"
-  LIVE_WORKSPACES+=("$ws")
-  echo "$ws"
+  # Mints a fresh, unique subject under this repo's own
+  # docs/reports/records/ tree and returns docs/reports/records/<subject>/qa
+  # — the gate now resolves everything against the repo root
+  # (CLAUDE_PROJECT_DIR, exported once above), never an external workspace.
+  local subject qa_dir
+  subject="gate-test-$(date +%s)-$$-${RANDOM}-${#LIVE_WORKSPACES[@]}"
+  qa_dir="${REPO_ROOT}/docs/reports/records/${subject}/qa"
+  mkdir -p "$qa_dir"
+  LIVE_WORKSPACES+=("${REPO_ROOT}/docs/reports/records/${subject}")
+  echo "$qa_dir"
 }
 
 item_block() {
@@ -83,9 +102,12 @@ item_block_with_priority() {
 }
 
 write_target() {
-  # write_target <ws> <slug> <label> <entry_point> [env_names]
-  local ws="$1" slug="$2" label="$3" entry_point="$4" env_names="${5:-}"
-  local dir="${ws}/projects/${slug}"
+  # write_target <ws> <slug-unused> <label> <entry_point> [env_names]
+  # slug is accepted for call-site compatibility but unused: ws IS the
+  # subject's qa/ directory now, not a workspace root nested under
+  # projects/<slug>/.
+  local ws="$1" label="$3" entry_point="$4" env_names="${5:-}"
+  local dir="${ws}"
   mkdir -p "$dir"
   {
     printf -- '---\n'
@@ -106,9 +128,9 @@ item_block_with_evidence() {
 }
 
 write_priority_token() {
-  # write_priority_token <ws> <slug> <item-id> <value> <phrase>
-  local ws="$1" slug="$2" item="$3" value="$4" phrase="$5"
-  local dir="${ws}/projects/${slug}/tokens"
+  # write_priority_token <ws> <slug-unused> <item-id> <value> <phrase>
+  local ws="$1" item="$3" value="$4" phrase="$5"
+  local dir="${ws}/tokens"
   mkdir -p "$dir"
   {
     printf 'item: %s\n' "$item"
@@ -119,17 +141,17 @@ write_priority_token() {
 }
 
 write_state() {
-  # write_state <ws> <slug> <content>
-  local ws="$1" slug="$2" content="$3"
-  local dir="${ws}/projects/${slug}"
+  # write_state <ws> <slug-unused> <content>
+  local ws="$1" content="$3"
+  local dir="${ws}"
   mkdir -p "$dir"
   printf '%s' "$content" > "${dir}/state.md"
 }
 
 write_token() {
-  # write_token <ws> <slug> <item-id> <transition> <phrase>
-  local ws="$1" slug="$2" item="$3" transition="$4" phrase="$5"
-  local dir="${ws}/projects/${slug}/tokens"
+  # write_token <ws> <slug-unused> <item-id> <transition> <phrase>
+  local ws="$1" item="$3" transition="$4" phrase="$5"
+  local dir="${ws}/tokens"
   mkdir -p "$dir"
   {
     printf 'item: %s\n' "$item"
@@ -139,9 +161,9 @@ write_token() {
 }
 
 write_consuming() {
-  # write_consuming <ws> <slug> <item-id> <transition> <phrase>
-  local ws="$1" slug="$2" item="$3" transition="$4" phrase="$5"
-  local dir="${ws}/projects/${slug}/tokens"
+  # write_consuming <ws> <slug-unused> <item-id> <transition> <phrase>
+  local ws="$1" item="$3" transition="$4" phrase="$5"
+  local dir="${ws}/tokens"
   mkdir -p "$dir"
   {
     printf 'item: %s\n' "$item"
@@ -188,9 +210,6 @@ run_case() {
 
   local out err rc
   local env_args=()
-  if [ -n "$ws" ]; then
-    env_args+=("QA_WORKSPACE=${ws}")
-  fi
   env_args+=("${extra_env[@]+"${extra_env[@]}"}")
 
   set +e
@@ -234,9 +253,6 @@ run_case_in_repo_root() {
 
   local err rc
   local env_args=()
-  if [ -n "$ws" ]; then
-    env_args+=("QA_WORKSPACE=${ws}")
-  fi
   env_args+=("${extra_env[@]+"${extra_env[@]}"}")
 
   set +e
@@ -277,9 +293,6 @@ run_case_argv() {
 
   local out err rc
   local env_args=()
-  if [ -n "$ws" ]; then
-    env_args+=("QA_WORKSPACE=${ws}")
-  fi
 
   set +e
   err="$(printf '%s' "$payload" | env "${GATE_ENV_CLEAR[@]}" ${env_args[@]+"${env_args[@]}"} "$GATE" ${gate_args[@]+"${gate_args[@]}"} 2>&1 1>/tmp/gate-test-stdout.$$)"
@@ -334,7 +347,7 @@ ws1="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws1" "$slug" "$(item_block BUG-1 observed)"
 write_target "$ws1" "$slug" "staging" "http://localhost:3000"
-payload="$(payload_write "${ws1}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "ran against staging")")"
+payload="$(payload_write "${ws1}/state.md" "$(item_block_with_evidence BUG-1 reproducing "ran against staging")")"
 run_case "valid-table-permitted-transition" 0 "$ws1" "$payload"
 cleanup_ws "$ws1"
 
@@ -344,7 +357,7 @@ cleanup_ws "$ws1"
 ws2="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws2" "$slug" "$(item_block BUG-1 observed)"
-payload="$(payload_write "${ws2}/projects/${slug}/state.md" "$(item_block BUG-1 verified-fixed)")"
+payload="$(payload_write "${ws2}/state.md" "$(item_block BUG-1 verified-fixed)")"
 run_case "transition-not-permitted-from-current-state" 2 "$ws2" "$payload"
 cleanup_ws "$ws2"
 
@@ -354,7 +367,7 @@ cleanup_ws "$ws2"
 ws3="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws3" "$slug" "$(item_block BUG-1 reproduced)"
-payload="$(payload_write "${ws3}/projects/${slug}/state.md" "$(item_block BUG-1 handed-off)")"
+payload="$(payload_write "${ws3}/state.md" "$(item_block BUG-1 handed-off)")"
 run_case "human-actor-transition-no-token" 2 "$ws3" "$payload"
 cleanup_ws "$ws3"
 
@@ -367,10 +380,10 @@ ws4="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws4" "$slug" "$(item_block BUG-1 reproduced)"
 write_token "$ws4" "$slug" "BUG-1" "reproduced -> handed-off" "yes, this is a genuine defect, hand it off"
-payload="$(payload_write "${ws4}/projects/${slug}/state.md" "$(item_block BUG-1 handed-off)")"
+payload="$(payload_write "${ws4}/state.md" "$(item_block BUG-1 handed-off)")"
 run_case "human-actor-transition-matching-token" 0 "$ws4" "$payload"
-expect_file "human-actor-live-token-gone" "${ws4}/projects/${slug}/tokens/BUG-1.token" "absent"
-expect_file "human-actor-consuming-marker-present" "${ws4}/projects/${slug}/tokens/BUG-1.consuming" "exists"
+expect_file "human-actor-live-token-gone" "${ws4}/tokens/BUG-1.token" "absent"
+expect_file "human-actor-consuming-marker-present" "${ws4}/tokens/BUG-1.consuming" "exists"
 
 # =========================================================================
 # Case 5: the same token replayed against the SAME still-unadvanced state
@@ -378,7 +391,7 @@ expect_file "human-actor-consuming-marker-present" "${ws4}/projects/${slug}/toke
 #            marker from case 4 still authorizes a retry of the identical
 #            transition because state.md was never actually advanced here)
 # =========================================================================
-payload="$(payload_write "${ws4}/projects/${slug}/state.md" "$(item_block BUG-1 handed-off)")"
+payload="$(payload_write "${ws4}/state.md" "$(item_block BUG-1 handed-off)")"
 run_case "consuming-marker-authorizes-retry-of-same-transition" 0 "$ws4" "$payload"
 cleanup_ws "$ws4"
 
@@ -399,7 +412,7 @@ cleanup_ws "$ws6"
 ws7="$(new_workspace)"
 slug="owner-repo"
 mkdir -p "${ws7}/projects/${slug}"
-payload="$(payload_write "${ws7}/projects/${slug}/state.md" "$(item_block BUG-1 reproduced)")"
+payload="$(payload_write "${ws7}/state.md" "$(item_block BUG-1 reproduced)")"
 run_case "state-file-absent" 2 "$ws7" "$payload"
 cleanup_ws "$ws7"
 
@@ -409,7 +422,7 @@ cleanup_ws "$ws7"
 ws8="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws8" "$slug" $'item: BUG-1\nstate: observed\nno frontmatter delimiters here\n'
-payload="$(payload_write "${ws8}/projects/${slug}/state.md" "$(item_block BUG-1 reproducing)")"
+payload="$(payload_write "${ws8}/state.md" "$(item_block BUG-1 reproducing)")"
 run_case "state-file-no-frontmatter" 2 "$ws8" "$payload"
 cleanup_ws "$ws8"
 
@@ -419,15 +432,18 @@ cleanup_ws "$ws8"
 ws9="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws9" "$slug" "$(item_block BUG-1 observed)"
-payload="$(payload_write "${ws9}/projects/${slug}/state.md" $'item: BUG-1\nstate: reproducing\nno frontmatter here either\n')"
+payload="$(payload_write "${ws9}/state.md" $'item: BUG-1\nstate: reproducing\nno frontmatter here either\n')"
 run_case "no-item-block-in-write-body" 2 "$ws9" "$payload"
 cleanup_ws "$ws9"
 
 # =========================================================================
-# Case 10: QA_WORKSPACE unset -> expect refuse
+# Case 10: a state.md-shaped write entirely outside
+# docs/reports/records/<subject>/qa/ -> expect allow (not_applicable: there
+# is no external workspace concept anymore, so a write outside the owned
+# record tree is simply not this gate's business).
 # =========================================================================
-payload="$(payload_write "/nonexistent/projects/owner-repo/state.md" "$(item_block BUG-1 reproducing)")"
-run_case "qa-workspace-unset" 2 "" "$payload"
+payload="$(payload_write "/tmp/nonexistent-subject/state.md" "$(item_block BUG-1 reproducing)")"
+run_case "state-md-outside-records-tree-not-applicable" 0 "" "$payload"
 
 # =========================================================================
 # Case 11: QA_CYCLE_DISABLE=1 -> expect allow (deliberate operator override)
@@ -435,7 +451,7 @@ run_case "qa-workspace-unset" 2 "" "$payload"
 ws11="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws11" "$slug" "$(item_block BUG-1 observed)"
-payload="$(payload_write "${ws11}/projects/${slug}/state.md" "$(item_block BUG-1 verified-fixed)")"
+payload="$(payload_write "${ws11}/state.md" "$(item_block BUG-1 verified-fixed)")"
 run_case "qa-cycle-disable-override" 0 "$ws11" "$payload" "QA_CYCLE_DISABLE=1"
 cleanup_ws "$ws11"
 
@@ -447,7 +463,7 @@ ws12="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws12" "$slug" "$(item_block BUG-1 reproduced)$(item_block BUG-2 reproduced)"
 write_token "$ws12" "$slug" "BUG-1" "reproduced -> handed-off" "confirmed defect, hand it off"
-payload="$(payload_write "${ws12}/projects/${slug}/state.md" "$(item_block BUG-1 reproduced)$(item_block BUG-2 handed-off)")"
+payload="$(payload_write "${ws12}/state.md" "$(item_block BUG-1 reproduced)$(item_block BUG-2 handed-off)")"
 run_case "token-for-one-item-rejected-for-another" 2 "$ws12" "$payload"
 cleanup_ws "$ws12"
 
@@ -459,7 +475,7 @@ ws13="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws13" "$slug" "$(item_block BUG-1 reproduced)"
 write_token "$ws13" "$slug" "BUG-1" "reproduced -> not-a-defect" "not a defect"
-payload="$(payload_write "${ws13}/projects/${slug}/state.md" "$(item_block BUG-1 handed-off)")"
+payload="$(payload_write "${ws13}/state.md" "$(item_block BUG-1 handed-off)")"
 run_case "token-for-one-transition-rejected-for-another" 2 "$ws13" "$payload"
 cleanup_ws "$ws13"
 
@@ -469,7 +485,7 @@ cleanup_ws "$ws13"
 ws14="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws14" "$slug" "$(item_block BUG-1 handed-off)"
-payload="$(payload_write "${ws14}/projects/${slug}/state.md" "$(item_block BUG-1 re-verifying)")"
+payload="$(payload_write "${ws14}/state.md" "$(item_block BUG-1 re-verifying)")"
 run_case "handed-off-refuses-without-human-token" 2 "$ws14" "$payload"
 cleanup_ws "$ws14"
 
@@ -499,17 +515,17 @@ slug="owner-repo"
 write_state "$ws15" "$slug" "$(item_block BUG-1 reproduced)"
 write_token "$ws15" "$slug" "BUG-1" "reproduced -> handed-off" "confirmed defect, hand it off"
 
-payload="$(payload_write "${ws15}/projects/${slug}/state.md" "$(item_block BUG-1 handed-off)")"
+payload="$(payload_write "${ws15}/state.md" "$(item_block BUG-1 handed-off)")"
 run_case "consumption-timing-first-allow-write-does-not-land" 0 "$ws15" "$payload"
 # state.md deliberately left unadvanced here to model the write not landing.
 
-payload="$(payload_write "${ws15}/projects/${slug}/state.md" "$(item_block BUG-1 handed-off)")"
+payload="$(payload_write "${ws15}/state.md" "$(item_block BUG-1 handed-off)")"
 run_case "consumption-timing-retry-still-allowed" 0 "$ws15" "$payload"
 
 # Now actually land the write, simulating the retry succeeding this time.
 write_state "$ws15" "$slug" "$(item_block BUG-1 handed-off)"
 
-payload="$(payload_write "${ws15}/projects/${slug}/state.md" "$(item_block BUG-1 re-verifying)")"
+payload="$(payload_write "${ws15}/state.md" "$(item_block BUG-1 re-verifying)")"
 run_case "consumption-timing-marker-does-not-authorize-a-different-transition" 2 "$ws15" "$payload"
 cleanup_ws "$ws15"
 
@@ -531,7 +547,7 @@ item: ${evil_item}
 transition: reproduced -> handed-off
 phrase: 'forged - never went through capture-verdict.sh'
 EOF
-payload="$(payload_write "${ws16}/projects/${slug}/state.md" "$(item_block "$evil_item" handed-off)")"
+payload="$(payload_write "${ws16}/state.md" "$(item_block "$evil_item" handed-off)")"
 run_case "path-traversing-item-id-refused" 2 "$ws16" "$payload"
 rm -f "/tmp/evil-item.token"
 cleanup_ws "$ws16"
@@ -543,7 +559,7 @@ cleanup_ws "$ws16"
 ws17="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws17" "$slug" "$(item_block "-BUG-1" observed)"
-payload="$(payload_write "${ws17}/projects/${slug}/state.md" "$(item_block "-BUG-1" reproducing)")"
+payload="$(payload_write "${ws17}/state.md" "$(item_block "-BUG-1" reproducing)")"
 run_case "item-id-leading-hyphen-refused" 2 "$ws17" "$payload"
 cleanup_ws "$ws17"
 
@@ -554,7 +570,7 @@ cleanup_ws "$ws17"
 ws18="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws18" "$slug" "$(item_block "BUG/1" observed)"
-payload="$(payload_write "${ws18}/projects/${slug}/state.md" "$(item_block "BUG/1" reproducing)")"
+payload="$(payload_write "${ws18}/state.md" "$(item_block "BUG/1" reproducing)")"
 run_case "item-id-disallowed-characters-refused" 2 "$ws18" "$payload"
 cleanup_ws "$ws18"
 
@@ -566,30 +582,29 @@ ws19="$(new_workspace)"
 slug="owner-repo"
 long_item="$(printf 'A%.0s' $(seq 1 65))"
 write_state "$ws19" "$slug" "$(item_block "$long_item" observed)"
-payload="$(payload_write "${ws19}/projects/${slug}/state.md" "$(item_block "$long_item" reproducing)")"
+payload="$(payload_write "${ws19}/state.md" "$(item_block "$long_item" reproducing)")"
 run_case "item-id-over-length-refused" 2 "$ws19" "$payload"
 cleanup_ws "$ws19"
 
 # =========================================================================
-# Case 20: project identifier outside the allow-list. `os.path.realpath`
-#          already collapses `..` segments before the project slug is ever
-#          extracted, so a literal `..` traversal in the project segment of
-#          file_path resolves to a path outside the workspace root entirely
-#          and is refused earlier, as "not this gate's business" (exit 0,
-#          covered by the workspace-containment check, not this case). What
-#          the project-identifier allow-list additionally catches is a
-#          slug that *is* a single, real path component under
-#          projects/ — passing the earlier realpath containment check —
-#          but contains characters outside the allow-list (here, a
-#          semicolon). Same defense-in-depth the item id gets -> expect
-#          refuse.
+# Case 20: subject read straight from a Write's own file_path, no separate
+# "project identifier" allow-list step exists anymore now that state.md
+# lives directly under docs/reports/records/<subject>/qa/state.md — the
+# subject segment is whatever path component is there, already
+# realpath-resolved and containment-checked against docs/reports/records/
+# before use. A legal transition under an unusual-but-real subject name is
+# still allowed -> expect allow (companion negative case in case 38 below
+# proves the same subject cannot escape the records tree).
 # =========================================================================
-ws20="$(new_workspace)"
-slug='owner;rm-repo'
-write_state "$ws20" "$slug" "$(item_block BUG-1 observed)"
-payload="$(payload_write "${ws20}/projects/${slug}/state.md" "$(item_block BUG-1 reproducing)")"
-run_case "project-id-disallowed-characters-refused" 2 "$ws20" "$payload"
-cleanup_ws "$ws20"
+subject20="gate-test-unusual-subject-name"
+qa_dir20="${REPO_ROOT}/docs/reports/records/${subject20}/qa"
+mkdir -p "$qa_dir20"
+LIVE_WORKSPACES+=("${REPO_ROOT}/docs/reports/records/${subject20}")
+write_state "$qa_dir20" "unused" "$(item_block BUG-1 observed)"
+write_target "$qa_dir20" "unused" "staging" "http://localhost:3000"
+payload="$(payload_write "${qa_dir20}/state.md" "$(item_block_with_evidence BUG-1 reproducing "ran against staging")")"
+run_case "unusual-subject-name-legal-transition-allowed" 0 "$qa_dir20" "$payload"
+cleanup_ws "$qa_dir20"
 
 # =========================================================================
 # Case 21: item missing `severity` attempting reproducing -> reproduced
@@ -599,7 +614,7 @@ cleanup_ws "$ws20"
 ws21="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws21" "$slug" "$(item_block BUG-1 reproducing)"
-payload="$(payload_write "${ws21}/projects/${slug}/state.md" "$(item_block_with_severity BUG-1 reproduced "")")"
+payload="$(payload_write "${ws21}/state.md" "$(item_block_with_severity BUG-1 reproduced "")")"
 run_case "reproduced-missing-severity-refused" 2 "$ws21" "$payload"
 cleanup_ws "$ws21"
 
@@ -609,7 +624,7 @@ cleanup_ws "$ws21"
 ws22="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws22" "$slug" "$(item_block BUG-1 reproducing)"
-payload="$(payload_write "${ws22}/projects/${slug}/state.md" "$(item_block_with_severity BUG-1 reproduced $'severity: catastrophic\n')")"
+payload="$(payload_write "${ws22}/state.md" "$(item_block_with_severity BUG-1 reproduced $'severity: catastrophic\n')")"
 run_case "reproduced-severity-outside-closed-set-refused" 2 "$ws22" "$payload"
 cleanup_ws "$ws22"
 
@@ -620,7 +635,7 @@ cleanup_ws "$ws22"
 ws23="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws23" "$slug" "$(item_block BUG-1 reproducing)"
-payload="$(payload_write "${ws23}/projects/${slug}/state.md" "$(item_block_with_severity BUG-1 reproduced $'severity: major\nseverity: minor\n')")"
+payload="$(payload_write "${ws23}/state.md" "$(item_block_with_severity BUG-1 reproduced $'severity: major\nseverity: minor\n')")"
 run_case "reproduced-two-severity-lines-refused" 2 "$ws23" "$payload"
 cleanup_ws "$ws23"
 
@@ -630,7 +645,7 @@ cleanup_ws "$ws23"
 ws24="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws24" "$slug" "$(item_block BUG-1 reproducing)"
-payload="$(payload_write "${ws24}/projects/${slug}/state.md" "$(item_block_with_severity BUG-1 reproduced $'severity: major\n')")"
+payload="$(payload_write "${ws24}/state.md" "$(item_block_with_severity BUG-1 reproduced $'severity: major\n')")"
 run_case "reproduced-valid-severity-allowed" 0 "$ws24" "$payload"
 cleanup_ws "$ws24"
 
@@ -640,7 +655,7 @@ cleanup_ws "$ws24"
 ws25="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws25" "$slug" "$(item_block BUG-1 reproduced)"
-payload="$(payload_write "${ws25}/projects/${slug}/state.md" "$(item_block_with_priority BUG-1 reproduced now)")"
+payload="$(payload_write "${ws25}/state.md" "$(item_block_with_priority BUG-1 reproduced now)")"
 run_case "priority-change-no-token-refused" 2 "$ws25" "$payload"
 cleanup_ws "$ws25"
 
@@ -651,7 +666,7 @@ ws26="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws26" "$slug" "$(item_block BUG-1 reproduced)$(item_block BUG-2 reproduced)"
 write_priority_token "$ws26" "$slug" "BUG-2" "now" "item BUG-2 priority now"
-payload="$(payload_write "${ws26}/projects/${slug}/state.md" "$(item_block_with_priority BUG-1 reproduced now)$(item_block BUG-2 reproduced)")"
+payload="$(payload_write "${ws26}/state.md" "$(item_block_with_priority BUG-1 reproduced now)$(item_block BUG-2 reproduced)")"
 run_case "priority-token-for-different-item-refused" 2 "$ws26" "$payload"
 cleanup_ws "$ws26"
 
@@ -663,7 +678,7 @@ ws27="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws27" "$slug" "$(item_block BUG-1 reproduced)"
 write_priority_token "$ws27" "$slug" "BUG-1" "later" "item BUG-1 priority later"
-payload="$(payload_write "${ws27}/projects/${slug}/state.md" "$(item_block_with_priority BUG-1 reproduced now)")"
+payload="$(payload_write "${ws27}/state.md" "$(item_block_with_priority BUG-1 reproduced now)")"
 run_case "priority-token-for-different-value-refused" 2 "$ws27" "$payload"
 cleanup_ws "$ws27"
 
@@ -680,7 +695,7 @@ ws28="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws28" "$slug" "$(item_block BUG-1 reproduced)"
 forged_content="$(printf -- '---\nitem: BUG-1\nstate: reproduced\nreproduction:\nevidence:\npriority: now\npriority-set-by: human\n---\n')"
-payload="$(payload_write "${ws28}/projects/${slug}/state.md" "$forged_content")"
+payload="$(payload_write "${ws28}/state.md" "$forged_content")"
 run_case "forged-priority-set-by-marker-no-token-refused" 2 "$ws28" "$payload"
 cleanup_ws "$ws28"
 
@@ -694,15 +709,15 @@ ws29="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws29" "$slug" "$(item_block BUG-1 reproduced)"
 write_priority_token "$ws29" "$slug" "BUG-1" "now" "item BUG-1 priority now"
-payload="$(payload_write "${ws29}/projects/${slug}/state.md" "$(item_block_with_priority BUG-1 reproduced now)")"
+payload="$(payload_write "${ws29}/state.md" "$(item_block_with_priority BUG-1 reproduced now)")"
 run_case "priority-token-first-use-allowed" 0 "$ws29" "$payload"
-expect_file "priority-live-token-gone" "${ws29}/projects/${slug}/tokens/BUG-1.priority.token" "absent"
-expect_file "priority-consuming-marker-present" "${ws29}/projects/${slug}/tokens/BUG-1.priority.consuming" "exists"
+expect_file "priority-live-token-gone" "${ws29}/tokens/BUG-1.priority.token" "absent"
+expect_file "priority-consuming-marker-present" "${ws29}/tokens/BUG-1.priority.consuming" "exists"
 
 # Land the write for real (advance state.md), then finalize + attempt a
 # second, different priority change with no fresh token -> must refuse.
 write_state "$ws29" "$slug" "$(item_block_with_priority BUG-1 reproduced now)"
-payload="$(payload_write "${ws29}/projects/${slug}/state.md" "$(item_block_with_priority BUG-1 reproduced next)")"
+payload="$(payload_write "${ws29}/state.md" "$(item_block_with_priority BUG-1 reproduced next)")"
 run_case "priority-token-replay-for-new-value-refused" 2 "$ws29" "$payload"
 cleanup_ws "$ws29"
 
@@ -715,10 +730,10 @@ ws30="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws30" "$slug" "$(item_block BUG-1 reproduced)"
 write_priority_token "$ws30" "$slug" "BUG-1" "now" "item BUG-1 priority now"
-payload="$(payload_write "${ws30}/projects/${slug}/state.md" "$(item_block_with_priority BUG-1 reproduced now)")"
+payload="$(payload_write "${ws30}/state.md" "$(item_block_with_priority BUG-1 reproduced now)")"
 run_case "priority-consumption-timing-first-allow-write-does-not-land" 0 "$ws30" "$payload"
 # state.md deliberately left unadvanced, modeling the permitted write failing.
-payload="$(payload_write "${ws30}/projects/${slug}/state.md" "$(item_block_with_priority BUG-1 reproduced now)")"
+payload="$(payload_write "${ws30}/state.md" "$(item_block_with_priority BUG-1 reproduced now)")"
 run_case "priority-consumption-timing-retry-still-allowed" 0 "$ws30" "$payload"
 cleanup_ws "$ws30"
 
@@ -730,7 +745,7 @@ cleanup_ws "$ws30"
 ws31="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws31" "$slug" "$(item_block BUG-1 handed-off)"
-payload="$(payload_write "${ws31}/projects/${slug}/state.md" "$(item_block BUG-1 re-verifying)")"
+payload="$(payload_write "${ws31}/state.md" "$(item_block BUG-1 re-verifying)")"
 run_case_argv "dump-facts-with-stdin-payload-refuses-hunt-repro" 2 "$ws31" "$payload" -- --dump-facts
 cleanup_ws "$ws31"
 
@@ -757,7 +772,7 @@ run_case_argv "dump-facts-standalone-no-stdin-allows" 0 "" "" -- --dump-facts
 ws35="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws35" "$slug" "$(item_block BUG-1 observed)"
-payload="$(payload_write "${ws35}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "ran against staging")")"
+payload="$(payload_write "${ws35}/state.md" "$(item_block_with_evidence BUG-1 reproducing "ran against staging")")"
 run_case "target-absent-refused" 2 "$ws35" "$payload"
 cleanup_ws "$ws35"
 
@@ -769,8 +784,8 @@ ws36="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws36" "$slug" "$(item_block BUG-1 observed)"
 mkdir -p "${ws36}/projects/${slug}"
-: > "${ws36}/projects/${slug}/target.md"
-payload="$(payload_write "${ws36}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "ran against staging")")"
+: > "${ws36}/target.md"
+payload="$(payload_write "${ws36}/state.md" "$(item_block_with_evidence BUG-1 reproducing "ran against staging")")"
 run_case "target-empty-refused" 2 "$ws36" "$payload"
 cleanup_ws "$ws36"
 
@@ -787,26 +802,22 @@ mkdir -p "${ws37}/projects/${slug}"
   printf 'label: staging\n'
   printf 'env_names: API_KEY\n'
   printf -- '---\n'
-} > "${ws37}/projects/${slug}/target.md"
-payload="$(payload_write "${ws37}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "ran against staging")")"
+} > "${ws37}/target.md"
+payload="$(payload_write "${ws37}/state.md" "$(item_block_with_evidence BUG-1 reproducing "ran against staging")")"
 run_case "target-missing-required-field-refused" 2 "$ws37" "$payload"
 cleanup_ws "$ws37"
 
 # =========================================================================
-# Case 38: a crafted project id attempting to escape the workspace root via
-#          the target.md path — same reproduction shape as case 20 (a slug
-#          that is a single real path component under projects/ but
-#          contains characters outside the project-identifier allow-list) —
-#          -> expect refuse, and the forged target.md outside the workspace
-#          is never consulted.
+# Case 38: a `..`-traversing subject segment in the write's own file_path —
+# os.path.realpath collapses it before the subject is ever extracted, so
+# the resolved path lands outside docs/reports/records/ entirely -> expect
+# allow (not_applicable: this is not a path this gate governs at all, the
+# same "escapes the owned tree" outcome the old workspace-containment check
+# produced for an escaping project id).
 # =========================================================================
-ws38="$(new_workspace)"
-slug='owner;rm-repo'
-write_state "$ws38" "$slug" "$(item_block BUG-1 observed)"
-write_target "$ws38" "$slug" "staging" "http://localhost:3000"
-payload="$(payload_write "${ws38}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "ran against staging")")"
-run_case "target-project-id-disallowed-characters-refused" 2 "$ws38" "$payload"
-cleanup_ws "$ws38"
+escaping_path38="${REPO_ROOT}/docs/reports/records/../../etc/passwd-style-escape/qa/state.md"
+payload="$(payload_write "$escaping_path38" "$(item_block_with_evidence BUG-1 reproducing "ran against staging")")"
+run_case "traversing-subject-segment-escapes-records-tree-not-applicable" 0 "" "$payload"
 
 # =========================================================================
 # Case 39: a valid target declaration, referenced by the write's own
@@ -816,7 +827,7 @@ ws39="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws39" "$slug" "$(item_block BUG-1 observed)"
 write_target "$ws39" "$slug" "staging" "http://localhost:3000" "API_KEY"
-payload="$(payload_write "${ws39}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "reproduced against http://localhost:3000")")"
+payload="$(payload_write "${ws39}/state.md" "$(item_block_with_evidence BUG-1 reproducing "reproduced against http://localhost:3000")")"
 run_case "target-valid-declaration-allowed" 0 "$ws39" "$payload"
 cleanup_ws "$ws39"
 
@@ -831,7 +842,7 @@ cleanup_ws "$ws39"
 ws40="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws40" "$slug" "$(item_block BUG-1 re-verifying)"
-payload="$(payload_write "${ws40}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "ran against staging")")"
+payload="$(payload_write "${ws40}/state.md" "$(item_block_with_evidence BUG-1 reproducing "ran against staging")")"
 run_case "target-absent-refused-re-verifying-to-reproducing" 2 "$ws40" "$payload"
 cleanup_ws "$ws40"
 
@@ -845,7 +856,7 @@ ws41="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws41" "$slug" "$(item_block BUG-1 re-verifying)"
 write_target "$ws41" "$slug" "staging" "http://localhost:3000" "API_KEY"
-payload="$(payload_write "${ws41}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "reproduced against http://localhost:3000")")"
+payload="$(payload_write "${ws41}/state.md" "$(item_block_with_evidence BUG-1 reproducing "reproduced against http://localhost:3000")")"
 run_case "target-valid-declaration-allowed-re-verifying-to-reproducing" 0 "$ws41" "$payload"
 cleanup_ws "$ws41"
 
@@ -862,7 +873,7 @@ ws42="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws42" "$slug" "$(item_block BUG-1 observed)"
 mkdir -p "${ws42}/projects/${slug}"
-python3 - "${ws42}/projects/${slug}/target.md" <<'PY'
+python3 - "${ws42}/target.md" <<'PY'
 import sys
 path = sys.argv[1]
 pad = "x" * 70000
@@ -871,7 +882,7 @@ content = ("---\nlabel: staging\nentry_point: http://localhost:3000\n---\n"
 with open(path, "w") as fh:
     fh.write(content)
 PY
-payload="$(payload_write "${ws42}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "reproduced against http://localhost:3000")")"
+payload="$(payload_write "${ws42}/state.md" "$(item_block_with_evidence BUG-1 reproducing "reproduced against http://localhost:3000")")"
 run_case "target-second-block-past-cap-refused" 2 "$ws42" "$payload"
 cleanup_ws "$ws42"
 
@@ -887,7 +898,7 @@ ws43="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws43" "$slug" "$(item_block BUG-1 observed)"
 mkdir -p "${ws43}/projects/${slug}"
-python3 - "${ws43}/projects/${slug}/target.md" <<'PY'
+python3 - "${ws43}/target.md" <<'PY'
 import sys
 path = sys.argv[1]
 pad = "x" * 70000
@@ -895,7 +906,7 @@ content = "---\nlabel: staging\nentry_point: http://localhost:3000\nenv_names: %
 with open(path, "w") as fh:
     fh.write(content)
 PY
-payload="$(payload_write "${ws43}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "reproduced against http://localhost:3000")")"
+payload="$(payload_write "${ws43}/state.md" "$(item_block_with_evidence BUG-1 reproducing "reproduced against http://localhost:3000")")"
 run_case "target-oversized-otherwise-valid-refused" 2 "$ws43" "$payload"
 cleanup_ws "$ws43"
 
@@ -910,7 +921,7 @@ ws44="$(new_workspace)"
 slug="owner-repo"
 write_state "$ws44" "$slug" "$(item_block BUG-1 observed)"
 write_target "$ws44" "$slug" "staging" "http://localhost:3000" "API_KEY"
-payload="$(payload_write "${ws44}/projects/${slug}/state.md" "$(item_block_with_evidence BUG-1 reproducing "reproduced against http://localhost:3000")")"
+payload="$(payload_write "${ws44}/state.md" "$(item_block_with_evidence BUG-1 reproducing "reproduced against http://localhost:3000")")"
 run_case "target-normal-valid-declaration-still-allowed" 0 "$ws44" "$payload"
 cleanup_ws "$ws44"
 
@@ -996,6 +1007,20 @@ run_case_in_repo_root "path-ref-allow-foreign-plain-read" 0 "" "$payload"
 own_bash_record="${REPO_ROOT}/docs/reports/records/own-subject-bash/qa.md"
 payload="$(payload_bash "printf -- 'kind: qa-record\n' > ${own_bash_record}")"
 run_case_in_repo_root "path-ref-allow-own-record-plain-redirect-legal-write" 0 "" "$payload"
+
+# =========================================================================
+# Case 58a: a write to any other file under qa's own owned record area —
+# intake.md, plan.md, runs/**, evidence, tokens/**, target.md — that is NOT
+# state.md is unconditionally allowed once ownership is confirmed. Per the
+# proposal (docs/proposals/2026-07-27-qa-records-in-target-repo.md): all QA
+# records (intake, plan, runs, evidence, regression, stats) live under
+# docs/reports/records/<subject>/qa/** in the target repo now, and only
+# state.md gets the item-level transition machine — everything else in
+# qa/** is qa's own record, allow()d directly.
+# =========================================================================
+own_intake_record="${REPO_ROOT}/docs/reports/records/own-subject-intake/qa/intake.md"
+payload="$(payload_write "$own_intake_record" $'---\nissues:\n  repo: acme/api\n---\n')"
+run_case "qa-owned-non-state-file-write-allowed" 0 "" "$payload"
 
 # =========================================================================
 # Cases 55-58: gate-protection root resolution from CLAUDE_PROJECT_DIR
@@ -1111,7 +1136,7 @@ run_gate_crash "failclosed-record-fields-gate-nullbyte-path"   "${GATES_DIR}/rec
 
 # Every gate (write-shaped and the git-commit gates alike): malformed JSON on
 # stdin must DENY (exit 2), never fall through.
-run_gate_crash "failclosed-transition-gate-malformed-json"     "${GATES_DIR}/transition-gate.sh"      2 "$MALFORMED_PAYLOAD" "QA_WORKSPACE=${REPO_ROOT}"
+run_gate_crash "failclosed-transition-gate-malformed-json"     "${GATES_DIR}/transition-gate.sh"      2 "$MALFORMED_PAYLOAD"
 run_gate_crash "failclosed-doc-bucket-gate-malformed-json"     "${GATES_DIR}/doc-bucket-gate.sh"      2 "$MALFORMED_PAYLOAD"
 run_gate_crash "failclosed-path-ownership-gate-malformed-json" "${GATES_DIR}/path-ownership-gate.sh"  2 "$MALFORMED_PAYLOAD"
 run_gate_crash "failclosed-record-fields-gate-malformed-json"  "${GATES_DIR}/record-fields-gate.sh"   2 "$MALFORMED_PAYLOAD"

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# SessionStart hook: reports feedback items in flight under QA_WORKSPACE.
+# SessionStart hook: reports feedback items in flight under the target
+# repo's docs/reports/records/<subject>/qa/ record area.
 # Silent when there is none — this only surfaces state that already
 # exists, it never creates any.
 #
@@ -23,9 +24,18 @@ case "${QA_CYCLE_DISABLE:-}" in
   *) exit 0 ;;
 esac
 
-ws="${QA_WORKSPACE:-}"
-[ -n "$ws" ] || exit 0
-[ -d "$ws/projects" ] || exit 0
+# root resolution: same rule as transition-gate.sh's gate-protection root —
+# CLAUDE_PROJECT_DIR when set, otherwise cwd's git top-level. No workspace
+# root, no sibling repo, no env var: this hook only ever looks inside the
+# target repo it is installed into.
+if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
+  repo_root="${CLAUDE_PROJECT_DIR%/}"
+else
+  command -v git >/dev/null 2>&1 && git rev-parse --show-toplevel >/dev/null 2>&1 || exit 0
+  repo_root="$(git rev-parse --show-toplevel)"
+fi
+records_root="$repo_root/docs/reports/records"
+[ -d "$records_root" ] || exit 0
 
 command -v python3 >/dev/null 2>&1 || exit 0
 
@@ -114,9 +124,9 @@ for group in group_order:
 PY
 
 found=0
-for dir in "$ws"/projects/*/; do
+for dir in "$records_root"/*/qa/; do
   [ -d "$dir" ] || continue
-  slug="$(basename "$dir")"
+  subject="$(basename "$(dirname "$dir")")"
   state="$dir/state.md"
   [ -f "$state" ] || continue
 
@@ -124,10 +134,10 @@ for dir in "$ws"/projects/*/; do
   [ -n "$report" ] || continue
 
   if [ "$found" -eq 0 ]; then
-    echo "qa-cycle: projects in flight —"
+    echo "qa-cycle: subjects in flight —"
     found=1
   fi
-  echo "  $slug (state: $state):"
+  echo "  $subject (state: $state):"
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     echo "    $line"

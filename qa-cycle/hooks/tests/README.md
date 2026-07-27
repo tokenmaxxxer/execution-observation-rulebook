@@ -1,10 +1,12 @@
 # `transition-gate.sh` execution check
 
 `run-gate-tests.sh` runs the real `qa-cycle/hooks/transition-gate.sh` as a
-subprocess, once per case, against a real temporary `QA_WORKSPACE` it builds
-and tears down. It asserts on the observed exit code (and, where a refusal
-is expected, that the gate's stderr message is non-empty) — never on the
-gate's source text.
+subprocess, once per case, against real fixture files it builds and tears
+down under this repo's own `docs/reports/records/<subject>/qa/` tree (the
+gate has no external workspace concept anymore — see
+`docs/proposals/2026-07-27-qa-records-in-target-repo.md`). It asserts on
+the observed exit code (and, where a refusal is expected, that the gate's
+stderr message is non-empty) — never on the gate's source text.
 
 The gate is keyed on the item axis: `state.md` holds one record per
 feedback item (see `docs/handbooks/qa-cycle.md` "The state file"), and
@@ -18,14 +20,15 @@ qa-cycle/hooks/tests/run-gate-tests.sh
 
 One command. It prints a line per case (`case: <name> | expected: <code> |
 observed: <code> | ok|FAIL`), then a final tally, and exits non-zero if any
-case's observed exit code differed from expected. Every temporary workspace
-it creates is removed on exit, including on failure — nothing is left under
-`/tmp`, and nothing is ever written into a real `~/qa-workspace` checkout.
+case's observed exit code differed from expected. Every subject directory
+it creates under `docs/reports/records/` (named `gate-test-*`) is removed
+on exit, including on failure — nothing is left in this repo's own working
+tree.
 
-Each case runs with `QA_WORKSPACE` and `QA_CYCLE_DISABLE` cleared from the
-inherited environment and re-added only if the case declares them, so a case
-labelled "unset" really is unset — `env` passes the caller's environment
-through, and every machine that runs this rulebook exports `QA_WORKSPACE`.
+Each case runs with `QA_CYCLE_DISABLE` cleared from the inherited
+environment and re-added only if the case declares it, so a case testing
+the kill switch really controls it — `env` passes the caller's environment
+through otherwise.
 
 ## Interpreters
 
@@ -43,7 +46,7 @@ nothing.
 ## Cases covered
 
 The numbered list below is the original set and has not been extended as
-cases were added; the runner currently executes 52. Its tally line is the
+cases were added; the runner currently executes 86. Its tally line is the
 authority on the count, not this list.
 
 1. Valid table-permitted transition (agent actor) — expect allow.
@@ -65,7 +68,9 @@ authority on the count, not this list.
 9. A write whose body has no readable `item:`/`state:` block — expect
    refuse (tests the attempted-state parse, distinct from case 8's
    current-state parse).
-10. `QA_WORKSPACE` unset — expect refuse.
+10. A state.md-shaped write entirely outside
+    `docs/reports/records/<subject>/qa/` — expect allow (not this gate's
+    business; there is no external workspace fallback anymore).
 11. `QA_CYCLE_DISABLE=1` — expect allow (the deliberate operator override).
 12. A token minted for one item id is rejected when a different item
     attempts the identical `(from, to)` pair — expect refuse.

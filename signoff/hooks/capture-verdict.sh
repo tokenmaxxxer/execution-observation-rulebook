@@ -4,9 +4,9 @@
 # file, issue, PR, comment, or tool result.
 # Kill switch: export QA_SIGNOFF_DISABLE=1
 #
-# This hook never blocks. Malformed/unreadable input, no workspace, no
-# project state, no identifiable item, or an ambiguous/absent verdict all
-# mean: emit nothing, exit 0.
+# This hook never blocks. Malformed/unreadable input, no repo root, no
+# subject state, no identifiable item, an item found under more than one
+# subject, or an ambiguous/absent verdict all mean: emit nothing, exit 0.
 #
 # state.md now holds one record per feedback item, not a single project
 # `phase` (docs/handbooks/qa-cycle.md "The state file"). A verdict must
@@ -21,12 +21,25 @@ case "${QA_SIGNOFF_DISABLE:-}" in
   *) exit 0 ;;
 esac
 
-# Nothing to enforce without a workspace; not our job to complain (that's
-# the gate's job).
-ws="${QA_WORKSPACE:-}"
-[ -n "$ws" ] || exit 0
-[ -d "$ws" ] || exit 0
-ws="$(cd "$ws" 2>/dev/null && pwd -P)" || exit 0
+# root resolution: CLAUDE_PROJECT_DIR when set, otherwise cwd's git
+# top-level — same rule as qa-cycle's gate. No external workspace, no env
+# var: this hook only ever looks inside the target repo it is installed
+# into.
+if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
+  repo_root="${CLAUDE_PROJECT_DIR%/}"
+elif command -v git >/dev/null 2>&1 && git rev-parse --show-toplevel >/dev/null 2>&1; then
+  repo_root="$(git rev-parse --show-toplevel)"
+else
+  exit 0
+fi
+# Resolve to the real (symlink-free) path once, here, so every later
+# containment comparison (subject/qa dirs resolved via `pwd -P`) is real-path
+# to real-path — a repo reached through a symlinked project root must not
+# make the containment check below compare a symlinked prefix against a
+# resolved one.
+repo_root="$(cd "$repo_root" 2>/dev/null && pwd -P)" || exit 0
+records_root="$repo_root/docs/reports/records"
+[ -d "$records_root" ] || exit 0
 
 command -v jq >/dev/null 2>&1 || exit 0
 command -v python3 >/dev/null 2>&1 || exit 0
@@ -38,34 +51,6 @@ payload="$(cat 2>/dev/null || true)"
 echo "$payload" | jq -e '.' >/dev/null 2>&1 || exit 0
 prompt="$(echo "$payload" | jq -r '.prompt // empty' 2>/dev/null || true)"
 [ -n "$prompt" ] || exit 0
-
-slug=$(git remote get-url origin 2>/dev/null | sed -e 's#\.git/*$##' -e 's#/*$##' -e 's#.*[:/]\([^/]*\)/\([^/]*\)$#\1-\2#' || true)
-[ -n "$slug" ] || slug=$(basename "$PWD")
-
-# The project identifier is validated at the point it is read, by
-# allow-list, before it is used in any path: ASCII letters, digits,
-# hyphen, underscore only, length 1..128, never starting with a hyphen.
-# Reject by pattern, never by stripping/sanitizing a bad value.
-case "$slug" in
-  -*) exit 0 ;;
-esac
-printf '%s' "$slug" | grep -qE '^[A-Za-z0-9_-]{1,128}$' || exit 0
-
-proj_dir="$ws/projects/$slug"
-# Independently of the allow-list above: resolve the path built from the
-# project identifier to a real path, then containment-check it against the
-# workspace root — resolve first, then check; a check before resolution
-# proves nothing. (The directory must already exist for this hook to have
-# anything to do, so resolving it here is safe.)
-proj_dir_real="$(cd "$proj_dir" 2>/dev/null && pwd -P)" || exit 0
-case "$proj_dir_real" in
-  "$ws") ;;
-  "$ws"/*) ;;
-  *) exit 0 ;;
-esac
-proj_dir="$proj_dir_real"
-state_file="$proj_dir/state.md"
-[ -f "$state_file" ] || exit 0
 
 # --- identify the item this turn concerns ------------------------------
 # Required, explicit form: "item <id>" (case-insensitive). No item id, no
@@ -87,34 +72,57 @@ esac
 printf '%s' "$raw_item" | grep -qE '^[A-Za-z0-9_-]{1,64}$' || exit 0
 item_id="$raw_item"
 
-# Current state of that item, read the same way the gate reads it: the
-# single `state:` key inside the one block whose `item:` key matches.
-phase="$(python3 - "$state_file" "$item_id" <<'PY' 2>/dev/null || true
-import re, sys
-path, item_id = sys.argv[1], sys.argv[2]
-try:
-    with open(path, encoding="utf-8-sig") as fh:
-        text = fh.read(1 << 20)
-except OSError:
-    sys.exit(0)
+# --- find which subject's state.md carries this item -------------------
+# Records live per-subject now (docs/reports/records/<subject>/qa/state.md),
+# and a host can have more than one subject's QA record in flight at once.
+# This turn names an item id but not a subject, so every subject's
+# state.md is searched for a block naming that item; exactly one hit is
+# required — no hit, or more than one subject claiming the same item id,
+# both mean "cannot identify a single target", so no token is minted.
+# Same read discipline as the gate: the single `state:` key inside the one
+# block whose `item:` key matches.
+match="$(python3 - "$records_root" "$item_id" <<'PY' 2>/dev/null || true
+import glob, os, re, sys
+records_root, item_id = sys.argv[1], sys.argv[2]
 BLOCK_RE = re.compile(r"^---[ \t]*\r?\n(.*?)\r?\n---[ \t]*\r?\n?", re.M | re.S)
 ITEM_KEY = re.compile(r"^item:\s*(.*?)\s*(?:#.*)?$", re.M)
 STATE_KEY = re.compile(r"^state:\s*(.*?)\s*(?:#.*)?$", re.M)
-matches = []
-for m in BLOCK_RE.finditer(text):
-    block = m.group(1)
-    items = ITEM_KEY.findall(block)
-    states = STATE_KEY.findall(block)
-    if len(items) == 1 and items[0].strip() == item_id:
-        if len(states) == 1 and states[0].strip():
-            matches.append(states[0].strip())
-        else:
-            matches.append(None)
-if len(matches) == 1 and matches[0]:
-    print(matches[0])
+hits = []
+for state_path in sorted(glob.glob(os.path.join(records_root, "*", "qa", "state.md"))):
+    try:
+        with open(state_path, encoding="utf-8-sig") as fh:
+            text = fh.read(1 << 20)
+    except OSError:
+        continue
+    matches = []
+    for m in BLOCK_RE.finditer(text):
+        block = m.group(1)
+        items = ITEM_KEY.findall(block)
+        states = STATE_KEY.findall(block)
+        if len(items) == 1 and items[0].strip() == item_id:
+            if len(states) == 1 and states[0].strip():
+                matches.append(states[0].strip())
+            else:
+                matches.append(None)
+    if len(matches) == 1 and matches[0]:
+        subject = os.path.basename(os.path.dirname(os.path.dirname(state_path)))
+        hits.append((subject, matches[0]))
+if len(hits) == 1:
+    print("%s\t%s" % hits[0])
 PY
 )"
-[ -n "$phase" ] || exit 0
+[ -n "$match" ] || exit 0
+subject="${match%%$'\t'*}"
+phase="${match#*$'\t'}"
+[ -n "$subject" ] && [ -n "$phase" ] || exit 0
+
+proj_dir="$records_root/$subject/qa"
+proj_dir_real="$(cd "$proj_dir" 2>/dev/null && pwd -P)" || exit 0
+case "$proj_dir_real" in
+  "$records_root"/*) ;;
+  *) exit 0 ;;
+esac
+proj_dir="$proj_dir_real"
 
 # --- Unambiguous verdict detection -----------------------------------
 # A verdict must (a) name the target transition's destination state in

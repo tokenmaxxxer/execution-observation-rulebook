@@ -23,19 +23,20 @@ plugin can stay enabled in a repo where dev work also happens.
 
 ## Artifacts
 
-In the QA workspace (`$QA_WORKSPACE`, default `~/qa-workspace`) — never in
-the target repo:
+In the target repo itself, under qa's own record area
+(`docs/reports/records/<subject>/qa/`, per
+`docs/specs/role-handoff-contract.md` §10):
 
 ```
-projects/<slug>/
+docs/reports/records/<subject>/qa/
   runs/2026-07-24-smoke.md      # one record per run: case table + failures
   evidence/2026-07-24-smoke/    # screenshots, outputs, logs cited by the record
 ```
 
-Run records are committed to the workspace repo, so an interrupted run
+Run records are committed to the target repo, so an interrupted run
 resumes from disk and any other session (or CI) can read exactly what was
-tested against which commit. If `projects/<slug>/regress/` has adopted
-regression tests, every run executes that suite first.
+tested against which commit. If `docs/reports/records/<subject>/qa/regress/`
+has adopted regression tests, every run executes that suite first.
 
 Kill switch: `QA_TESTRUN_OFF=1`.
 

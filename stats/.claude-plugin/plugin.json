@@ -1,6 +1,6 @@
 {
   "name": "stats",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Trust accounting: /qa-stats follows every issue filed from qa/runs/ to its tracker outcome and reports the stack's production signal — acceptance rate, noise rate, duplicate conversions, UNFILED reasons. Read-only, no state writes. A UserPromptSubmit hook injects the reporting discipline.",
   "author": {
     "name": "tokenmaxxxer"

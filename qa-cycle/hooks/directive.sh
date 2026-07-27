@@ -10,12 +10,12 @@ esac
 
 cat <<'EOF'
 <qa-cycle-directive priority="high">
-SURFACE GATE: inert unless this session is doing QA work against a project tracked under $QA_WORKSPACE/projects/<owner>-<repo>/ — running intake, executing a test session, triaging an item, handing off or re-verifying a defect, or moving toward a verdict on a feedback item. Pure conversation, reading, or work on a project with no state.md in flight leaves this directive with nothing to say.
+SURFACE GATE: inert unless this session is doing QA work against a subject tracked under `docs/reports/records/<subject>/qa/` in the target repo — running intake, executing a test session, triaging an item, handing off or re-verifying a defect, or moving toward a verdict on a feedback item. Pure conversation, reading, or work on a subject with no state.md in flight leaves this directive with nothing to say.
 
 TRIGGER CONDITIONS: any turn that would move a feedback item from one state to another, or that asks what state an item is in.
 
 THE RULES:
-- `state.md` at `$QA_WORKSPACE/projects/<owner>-<repo>/state.md` is the single source of each feedback item's current state. Nothing else — not a run record, not an issue's open/closed status, not a conversation's memory — outstanks it.
+- `state.md` at `docs/reports/records/<subject>/qa/state.md` is the single source of each feedback item's current state. Nothing else — not a run record, not an issue's open/closed status, not a conversation's memory — outstanks it.
 - `qa-cycle` is the only writer of `state.md`. No sibling plugin edits it directly; every state change is a write attempt that this plugin's PreToolUse gate (`transition-gate.sh`) checks against the transition table in `docs/specs/qa-cycle-state-machine.md` before it lands.
 - The gate allows exactly what that table allows from an item's current state, nothing more. A transition the table does not list is refused, naming the current state and what is legal from it.
 - Four transitions are human-only by construction: `reproduced -> handed-off`, `reproduced -> not-a-defect`, `reproduced -> wont-fix`, `handed-off -> re-verifying`. An agent cannot cause these alone. They require a matching, unconsumed verdict token minted by `signoff` from the user's own turn, bound to the specific item and transition, and the gate consumes that token the moment it permits the write.
