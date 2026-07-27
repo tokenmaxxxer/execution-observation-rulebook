@@ -1,5 +1,5 @@
 ---
-status: approved
+status: landed
 files:
   - qa-cycle/hooks/trailer-gate.sh
   - qa-cycle/hooks/handbook-trigger-gate.sh
