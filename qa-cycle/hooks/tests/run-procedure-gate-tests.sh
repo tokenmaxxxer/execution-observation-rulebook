@@ -96,6 +96,25 @@ LOG_CMD=$(printf '{"tool_name":"Bash","tool_input":{"command":"git log"}}' | j)
 run_gate handbook-trigger-gate.sh "$LOG_CMD"
 expect "handbook-trigger ignores non-commit 'git log'" 0 "$RC"
 
+# reproduce and close the shlex-parse-failure fail-open bypass
+git -C "$REPO" reset -q
+git -C "$REPO" add package.json
+UNTERM_CMT=$(printf '{"tool_name":"Bash","tool_input":{"command":"git commit -m \\"unterminated"}}' | j)
+run_gate handbook-trigger-gate.sh "$UNTERM_CMT"
+expect "handbook-trigger REFUSES unterminated-quote commit with no handbook touched" 2 "$RC"
+
+UNTERM_ML_CMT=$(python3 -c 'import json; print(json.dumps({"tool_name":"Bash","tool_input":{"command":"git \\\\\ncommit -m \"unterminated"}}))')
+run_gate handbook-trigger-gate.sh "$UNTERM_ML_CMT"
+expect "handbook-trigger REFUSES multi-line backslash-continuation unterminated-quote commit with no handbook touched" 2 "$RC"
+
+git -C "$REPO" add docs/handbooks/pkg.md
+run_gate handbook-trigger-gate.sh "$UNTERM_CMT"
+expect "handbook-trigger ALLOWS unterminated-quote commit once handbook touched" 0 "$RC"
+
+UNTERM_ECHO=$(printf '{"tool_name":"Bash","tool_input":{"command":"echo \\"unterminated"}}' | j)
+run_gate handbook-trigger-gate.sh "$UNTERM_ECHO"
+expect "handbook-trigger ALLOWS unterminated-quote non-git command" 0 "$RC"
+
 # ---- trailer-gate.sh ----
 # reset index, stage an in-progress qa record
 git -C "$REPO" reset -q
@@ -124,6 +143,28 @@ expect "trailer-gate ignores non-commit 'git -C <dir> status'" 0 "$RC"
 LOG_CMD2=$(printf '{"tool_name":"Bash","tool_input":{"command":"git log"}}' | j)
 run_gate trailer-gate.sh "$LOG_CMD2"
 expect "trailer-gate ignores non-commit 'git log'" 0 "$RC"
+
+# reproduce and close the shlex-parse-failure fail-open bypass
+# (qa.md is still staged and in-progress from the tests above)
+UNTERM_NOTRAILER=$(printf '{"tool_name":"Bash","tool_input":{"command":"git commit -m \\"unterminated"}}' | j)
+run_gate trailer-gate.sh "$UNTERM_NOTRAILER"
+expect "trailer-gate REFUSES unterminated-quote commit lacking Subject:/Kind: for in-progress qa unit" 2 "$RC"
+
+UNTERM_ML_NOTRAILER=$(python3 -c 'import json; print(json.dumps({"tool_name":"Bash","tool_input":{"command":"git \\\\\ncommit -m \"unterminated"}}))')
+run_gate trailer-gate.sh "$UNTERM_ML_NOTRAILER"
+expect "trailer-gate REFUSES multi-line backslash-continuation unterminated-quote commit lacking Subject:/Kind:" 2 "$RC"
+
+# When no qa unit is in-progress (trailer not required), an unterminated-
+# quote commit is allowed through before the message is ever parsed for a
+# trailer -- the parse failure never gets a chance to matter.
+git -C "$REPO" reset -q
+git -C "$REPO" add package.json
+run_gate trailer-gate.sh "$UNTERM_NOTRAILER"
+expect "trailer-gate ALLOWS unterminated-quote commit when no qa unit is in-progress (trailer not required)" 0 "$RC"
+
+UNTERM_ECHO2=$(printf '{"tool_name":"Bash","tool_input":{"command":"echo \\"unterminated"}}' | j)
+run_gate trailer-gate.sh "$UNTERM_ECHO2"
+expect "trailer-gate ALLOWS unterminated-quote non-git command" 0 "$RC"
 
 echo "----"
 echo "PASS=$PASS FAIL=$FAIL"

@@ -80,7 +80,16 @@ def is_git_commit_invocation(cmd):
     try:
         tokens = shlex.split(cmd)
     except ValueError:
-        return False
+        # cmd could not be tokenized (e.g. an unterminated quote); do not
+        # fail open. Fall back to a conservative heuristic over the raw
+        # string: if it looks like it could be a git commit, treat it as
+        # one so enforcement still applies.
+        matched = re.search(r'(?:^|\s)git\b.*?\bcommit\b', cmd, re.DOTALL) is not None
+        print("qa-cycle: warning — commit command could not be tokenized "
+              "(shlex parse failure); falling back to a conservative "
+              "regex heuristic to detect a possible commit (matched=%s)."
+              % matched, file=sys.stderr)
+        return matched
     for i, tok in enumerate(tokens):
         if tok != "git":
             continue
