@@ -1,7 +1,7 @@
 {
   "name": "regress",
-  "version": "0.1.0",
-  "description": "Regression tests with an adoption gate: /regress turns a confirmed bug into an automated test that is adopted only if it fails on the bug commit and passes stably on the fix. Adopted tests live in the QA workspace and run on every /testrun.",
+  "version": "0.1.1",
+  "description": "Regression tests with an adoption gate: /regress turns a confirmed bug into an automated test that is adopted only if it fails on the bug commit and passes stably on the fix. Adopted tests live under docs/reports/records/<subject>/qa/regress/ in the target repo and run on every /testrun.",
   "author": {
     "name": "tokenmaxxxer"
   }

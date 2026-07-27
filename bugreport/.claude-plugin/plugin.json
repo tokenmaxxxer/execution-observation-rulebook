@@ -1,6 +1,6 @@
 {
   "name": "bugreport",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Bug filing discipline: a confirmed, actually-reproduced defect becomes a tracker issue that follows the project's own issue template and labels (per qa/intake.md), with duplicate search before filing and a standard form as fallback.",
   "author": {
     "name": "tokenmaxxxer"
