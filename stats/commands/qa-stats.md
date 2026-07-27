@@ -8,14 +8,14 @@ Report the QA stack's production signal. Scope: $ARGUMENTS
 ## 0. Read-only
 
 This command never modifies run records, evidence, or issues. It only reads
-run records from the QA workspace (`$QA_WORKSPACE`, default `~/qa-workspace`)
-and queries the tracker.
+run records from the target repo's own record area
+(`docs/reports/records/<subject>/qa/runs/`) and queries the tracker.
 
 ## 1. Collect
 
-Read every `<workspace>/projects/<slug>/runs/*.md` for the current project
-(`<slug>` = `<owner>-<repo>` from the origin remote; with `--all`, every project in
-`projects/` — report per project plus a total). If `--since` is given, keep
+Read every `docs/reports/records/<subject>/qa/runs/*.md` for the current
+subject (with `--all`, every subject under `docs/reports/records/` that has
+a `qa/` area — report per subject plus a total). If `--since` is given, keep
 only records whose filename date is on or after it. From each record collect:
 
 - case-table totals: pass / fail / blocked rows, for context

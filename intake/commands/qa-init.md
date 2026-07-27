@@ -5,20 +5,20 @@ argument-hint: "[--check]"
 
 Create or verify this project's QA profile: $ARGUMENTS
 
-**Workspace resolution** (all QA artifacts live here, never in the target
-repo): root = `$QA_WORKSPACE`, or `~/qa-workspace` if unset. If the root does
-not exist, create it and `git init`, and say so in one line. If it has a
-remote, `git pull --rebase` before writing. This project's directory is
-`<root>/projects/<slug>/` where `<slug>` is `<owner>-<repo>` from the
-target's origin remote (e.g. `acme-api`; directory name if no remote). The
-profile path below is `<root>/projects/<slug>/intake.md`.
+**Record resolution** (all QA artifacts live here, in the target repo itself,
+per `docs/specs/role-handoff-contract.md` §10): root = the target repo's own
+`docs/reports/records/<subject>/qa/` directory, where `<subject>` is the
+subject this QA work belongs to (per §9's minting rule — reuse an existing
+subject for this piece of work if one already exists; mint `<date>-<slug>`
+if not). The profile path below is
+`docs/reports/records/<subject>/qa/intake.md`.
 
 ## If the argument is `--check` (doctor mode)
 
 Verify the environment and report a short table — do not modify anything:
 
-1. The workspace root resolves (`QA_WORKSPACE` set, or `~/qa-workspace`
-   exists) and is a git repository; note whether it has a remote to share.
+1. The subject's `docs/reports/records/<subject>/qa/` directory is
+   resolvable and the repo is a git repository.
 2. The profile exists and parses (frontmatter readable).
 3. `gh auth status` succeeds.
 4. The issue repo from the profile is reachable: `gh repo view <issues.repo>`.
@@ -40,7 +40,7 @@ Discover the profile by reading the project — ask the user only for what canno
 6. **Environments and secrets.** Record env var NAMES the QA work needs (staging URL, test account, …) — never values, never guesses. Unknown = leave listed but unset, and say so.
 7. **Language.** Issue and report language: infer from existing issues/README (e.g. `ko`, `en`); ask if unclear.
 
-Write the result to `<root>/projects/<slug>/intake.md`. If the file already exists, update only fields that discovery contradicts and preserve everything a human added. Format:
+Write the result to `docs/reports/records/<subject>/qa/intake.md`. If the file already exists, update only fields that discovery contradicts and preserve everything a human added. Format:
 
 ```markdown
 ---
@@ -70,4 +70,4 @@ Main user flows, environments, fragile areas, anything worth knowing before
 testing. Free-form, human-edited — discovery never overwrites this section.
 ```
 
-Finish with: the profile summary in a few lines, which fields were assumed vs confirmed, then commit the profile in the workspace repo (push if it has a remote) so every session shares it.
+Finish with: the profile summary in a few lines, which fields were assumed vs confirmed, then commit the profile in the target repo (push if it has a remote) so every session shares it.

@@ -14,8 +14,8 @@ solely to `qa-cycle`. It does two things:
    `UserPromptSubmit` hook) — reads the user's own turn (never a file,
    issue, PR, comment, or tool result) and, only on an unambiguous verdict
    that names what's being decided, mints a single-use token at
-   `$QA_WORKSPACE/projects/<owner>-<repo>/.verdict-token`. Vague assent
-   ("ok," "sounds good," a thumbs-up) produces no token.
+   `docs/reports/records/<subject>/qa/tokens/<item-id>.token` in the target
+   repo. Vague assent ("ok," "sounds good," a thumbs-up) produces no token.
 
 ## How an unambiguous verdict is recognized
 
@@ -40,15 +40,15 @@ sensitive, no token is minted and the hook says why instead.
 ## Token shape
 
 ```yaml
-transition: <phase> -> <phase>   # exactly one transition this token authorizes
-project: <owner>-<repo>
+item: <item-id>
+transition: <state> -> <state>   # exactly one transition this token authorizes
 phrase: '<verbatim, sanitized wording from the user's own turn>'
 ```
 
 Single use: the same `qa-cycle` gate operation that permits the write also
-deletes the token. A token whose `transition` or `project` doesn't match
+deletes the token. A token whose `item` or `transition` doesn't match
 the attempted write is treated by the gate as absent — reusing it, or
-using it for a different project, does nothing.
+using it for a different item or subject, does nothing.
 
 ## Kill switch
 

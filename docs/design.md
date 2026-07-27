@@ -109,17 +109,35 @@ shares one state, and CI reads/writes the same records. Run records link failure
 the issues they became (`UNFILED(<reason>)` otherwise), which is the thread a
 sign-off plugin will later pull.
 
-**Revised 2026-07-24 — the central workspace.** The per-repo `qa/` directory
-is replaced by one central private repo (`$QA_WORKSPACE`, default
-`~/qa-workspace`), one `projects/<slug>/` directory per target. Rationale:
-the agent is generic and QAs many projects — central storage keeps target
-repos untouched (projects without write access become testable, "report,
-don't fix" needs no carve-out) and makes cross-project stats trivial. What
-stays project-side: bug reports (the tracker is the dev handoff) — and
-regression tests move workspace-side, run by `/testrun` against a fresh
-checkout instead of by the target's CI. Trade-off accepted: regression
-detection at QA-run cadence, not per-commit; upstream PR remains an option
-per project.
+**Revised 2026-07-24 — the central workspace (superseded 2026-07-27, see
+below).** The per-repo `qa/` directory was replaced by one central private
+repo (an external, host-local, uncommitted workspace, keyed by an
+environment variable), one project directory per target. Rationale at the
+time: the agent is generic and QAs many projects — central storage kept
+target repos untouched (projects without write access became testable,
+"report, don't fix" needed no carve-out) and made cross-project stats
+trivial. What stayed project-side: bug reports (the tracker is the dev
+handoff) — and regression tests moved workspace-side, run by `/testrun`
+against a fresh checkout instead of by the target's CI.
+
+**Revised 2026-07-27 — records move into the target repo; the external
+workspace mechanism is removed entirely.** Per
+`docs/specs/role-handoff-contract.md` §10 and
+`docs/proposals/2026-07-27-qa-records-in-target-repo.md`: the external
+workspace repo and its environment variable are gone — the environment
+variable itself, every hook reference to it, and the gate logic that used
+to refuse writes when it was unset. All QA records (intake, plan, per-item
+state, verdict tokens, run records, evidence, regression tests, stats) now
+live committed in the target repo, under
+`docs/reports/records/<subject>/qa/**`, the same place every other role
+writes its record — the same place this section originally described,
+before the 2026-07-24 revision moved it out. What stays unchanged: bug
+reports still go to the target project's own tracker (the tracker is the
+dev handoff, not qa's own record), and an adopted regression test may still
+additionally be PR'd upstream when a project wants it in its own CI.
+Trade-off from 2026-07-24 that no longer applies: regression tests are no
+longer workspace-only property with no natural per-project home — they are
+committed, in-repo, alongside the rest of qa's record.
 
 ## Roadmap notes
 

@@ -13,7 +13,7 @@ unambiguous reply.
 
 ## 0. Precondition — current item state
 
-Read `$QA_WORKSPACE/projects/<slug>/state.md` for the item under review.
+Read `docs/reports/records/<subject>/qa/state.md` for the item under review.
 This command is only meaningful from `reproduced` (heading toward
 `handed-off` / `not-a-defect` / `wont-fix`) or from `handed-off` (heading
 toward `re-verifying`). If the item's state is something else, say so and
