@@ -77,6 +77,25 @@ git -C "$REPO" add docs/handbooks/pkg.md
 run_gate handbook-trigger-gate.sh "$CMT"
 expect "handbook-trigger PASSES op-surface change with handbook touched" 0 "$RC"
 
+# reproduce and close the git -C / git -c commit-detection bypass
+git -C "$REPO" reset -q
+git -C "$REPO" add package.json
+CMT_DASH_C=$(python3 -c 'import json,sys; print(json.dumps({"tool_name":"Bash","tool_input":{"command":"git -C %s commit -m msg" % sys.argv[1]}}))' "$REPO")
+run_gate handbook-trigger-gate.sh "$CMT_DASH_C"
+expect "handbook-trigger REFUSES 'git -C <dir> commit' op-surface change with no handbook touched" 2 "$RC"
+CMT_DASH_c=$(printf '{"tool_name":"Bash","tool_input":{"command":"git -c a=b commit -m msg"}}' | j)
+run_gate handbook-trigger-gate.sh "$CMT_DASH_c"
+expect "handbook-trigger REFUSES 'git -c a=b commit' op-surface change with no handbook touched" 2 "$RC"
+git -C "$REPO" add docs/handbooks/pkg.md
+run_gate handbook-trigger-gate.sh "$CMT_DASH_C"
+expect "handbook-trigger PASSES 'git -C <dir> commit' op-surface change with handbook touched" 0 "$RC"
+STATUS_DASH_C=$(python3 -c 'import json,sys; print(json.dumps({"tool_name":"Bash","tool_input":{"command":"git -C %s status" % sys.argv[1]}}))' "$REPO")
+run_gate handbook-trigger-gate.sh "$STATUS_DASH_C"
+expect "handbook-trigger ignores non-commit 'git -C <dir> status'" 0 "$RC"
+LOG_CMD=$(printf '{"tool_name":"Bash","tool_input":{"command":"git log"}}' | j)
+run_gate handbook-trigger-gate.sh "$LOG_CMD"
+expect "handbook-trigger ignores non-commit 'git log'" 0 "$RC"
+
 # ---- trailer-gate.sh ----
 # reset index, stage an in-progress qa record
 git -C "$REPO" reset -q
@@ -88,6 +107,23 @@ expect "trailer-gate REFUSES in-progress qa commit lacking Subject:/Kind:" 2 "$R
 WITHTRAILER=$(python3 -c 'import json; print(json.dumps({"tool_name":"Bash","tool_input":{"command":"git commit -m \"land qa record\n\nSubject: subj\nKind: qa-record\""}}))')
 run_gate trailer-gate.sh "$WITHTRAILER"
 expect "trailer-gate PASSES in-progress qa commit with Subject:/Kind:" 0 "$RC"
+
+# reproduce and close the git -C / git -c commit-detection bypass
+NOTRAILER_DASH_C=$(python3 -c 'import json,sys; print(json.dumps({"tool_name":"Bash","tool_input":{"command":"git -C %s commit -m \"land qa record\"" % sys.argv[1]}}))' "$REPO")
+run_gate trailer-gate.sh "$NOTRAILER_DASH_C"
+expect "trailer-gate REFUSES 'git -C <dir> commit' lacking Subject:/Kind: (bypass closed)" 2 "$RC"
+NOTRAILER_DASH_c=$(printf '{"tool_name":"Bash","tool_input":{"command":"git -c a=b commit -m \\"land qa record\\""}}' | j)
+run_gate trailer-gate.sh "$NOTRAILER_DASH_c"
+expect "trailer-gate REFUSES 'git -c a=b commit' lacking Subject:/Kind:" 2 "$RC"
+WITHTRAILER_DASH_C=$(python3 -c 'import json,sys; print(json.dumps({"tool_name":"Bash","tool_input":{"command":"git -C %s commit -m \"land qa record\n\nSubject: subj\nKind: qa-record\"" % sys.argv[1]}}))' "$REPO")
+run_gate trailer-gate.sh "$WITHTRAILER_DASH_C"
+expect "trailer-gate PASSES 'git -C <dir> commit' with Subject:/Kind:" 0 "$RC"
+STATUS_DASH_C2=$(python3 -c 'import json,sys; print(json.dumps({"tool_name":"Bash","tool_input":{"command":"git -C %s status" % sys.argv[1]}}))' "$REPO")
+run_gate trailer-gate.sh "$STATUS_DASH_C2"
+expect "trailer-gate ignores non-commit 'git -C <dir> status'" 0 "$RC"
+LOG_CMD2=$(printf '{"tool_name":"Bash","tool_input":{"command":"git log"}}' | j)
+run_gate trailer-gate.sh "$LOG_CMD2"
+expect "trailer-gate ignores non-commit 'git log'" 0 "$RC"
 
 echo "----"
 echo "PASS=$PASS FAIL=$FAIL"
