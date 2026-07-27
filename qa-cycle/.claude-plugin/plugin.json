@@ -1,6 +1,6 @@
 {
   "name": "qa-cycle",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "The QA cycle spine. Owns the per-item state file (state.md) under a subject's docs/reports/records/<subject>/qa/ in the target repo, and a PreToolUse gate that refuses any write to it the spec's transition table (docs/specs/qa-cycle-state-machine.md) does not permit from the item's current state. Human-only transitions require a matching verdict token minted by signoff. A SessionStart hook reports the current state of any item in flight.",
   "author": {
     "name": "tokenmaxxxer"

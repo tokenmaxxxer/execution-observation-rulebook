@@ -29,7 +29,7 @@ payload="$(cat 2>/dev/null || true)"
 
 set +e
 QA_PAYLOAD="$payload" QA_CPD="${CLAUDE_PROJECT_DIR:-}" python3 <<'PY'
-import json, os, posixpath, re, sys, subprocess
+import json, os, posixpath, re, shlex, sys, subprocess
 
 # --- fail-closed on ANY internal error (frozen contract: gates DENY on error) ---
 # Any uncaught exception in the judge below (e.g. os.path.realpath on a
@@ -71,8 +71,38 @@ command = tool_input.get("command")
 if not isinstance(command, str) or not command.strip():
     deny("the Bash command is missing or not a string; the gate cannot judge a commit it cannot read")
 
+GIT_GLOBAL_OPTS_WITH_ARG = {
+    "-C", "-c", "--git-dir", "--work-tree", "--namespace",
+    "--exec-path", "--super-prefix", "--config-env",
+}
+
+def is_git_commit_invocation(cmd):
+    try:
+        tokens = shlex.split(cmd)
+    except ValueError:
+        return False
+    for i, tok in enumerate(tokens):
+        if tok != "git":
+            continue
+        j = i + 1
+        while j < len(tokens):
+            t = tokens[j]
+            if t == "commit":
+                return True
+            if not t.startswith("-"):
+                break
+            if "=" in t:
+                j += 1
+                continue
+            base = t
+            if base in GIT_GLOBAL_OPTS_WITH_ARG:
+                j += 2
+                continue
+            j += 1
+    return False
+
 # Only our business when this is a `git commit`.
-if not re.search(r'\bgit\b(?:\s+-{1,2}\S+)*\s+commit\b', command):
+if not is_git_commit_invocation(command):
     allow()
 
 def plausible_root(p):
