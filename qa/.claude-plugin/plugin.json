@@ -1,0 +1,7 @@
+{
+  "name": "qa",
+  "description": "The qa role on contract v3: launch and exercise the real product; verdicts require execution and every verdict cites evidence; report-don't-fix. qa never files issues \u2014 confirmed defects return as bug reports in the qa record via PR, and the user files the issue if valid. Commands: /qa-init (discovery), /testrun (charter + session sheet), /regress (three-check adoption), /qa-stats (PR-outcome trust accounting).",
+  "author": {
+    "name": "Jung Jiwon & Lee Jongkwan"
+  }
+}

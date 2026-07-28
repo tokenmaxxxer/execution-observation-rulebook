@@ -1,48 +1,13 @@
 {
   "name": "tokenmaxxxer-qa",
   "owner": {
-    "name": "tokenmaxxxer"
+    "name": "Jung Jiwon & Lee Jongkwan"
   },
   "plugins": [
     {
-      "name": "intake",
-      "source": "./intake",
-      "description": "Per-project QA profile: /qa-init scans the target project once — issue tracker repo, issue templates, labels, app launch method, test conventions — and freezes it into qa/intake.md, which every other QA plugin reads. Committed to the project repo so every user shares one profile."
-    },
-    {
-      "name": "testrun",
-      "source": "./testrun",
-      "description": "Test execution: launches the actual product and exercises it — plan-driven when a plan exists, ad-hoc smoke otherwise. Every verdict carries evidence (command output, screenshot, log); run records land under qa/runs/. Report, don't fix: findings become issues, never edits to product code."
-    },
-    {
-      "name": "bugreport",
-      "source": "./bugreport",
-      "description": "Bug filing discipline: a confirmed, actually-reproduced defect becomes a tracker issue that follows the project's own issue template and labels (per qa/intake.md), with duplicate search before filing and a standard form as fallback."
-    },
-    {
-      "name": "stats",
-      "source": "./stats",
-      "description": "Trust accounting: /qa-stats follows every issue filed from the workspace's run records to its tracker outcome and reports the stack's production signal — acceptance rate (fixed), noise rate (closed not-planned), duplicate conversions, UNFILED reasons. Read-only, no hooks."
-    },
-    {
-      "name": "regress",
-      "source": "./regress",
-      "description": "Regression tests with an adoption gate: /regress turns a confirmed bug into an automated test adopted only if it fails on the bug commit and passes stably (k=5) on the fix. Adopted tests live in the QA workspace and run on every /testrun; anything that can't prove itself is discarded, not committed."
-    },
-    {
-      "name": "qa-cycle",
-      "source": "./qa-cycle",
-      "description": "The QA cycle spine: owns the session state file (projects/<owner>-<repo>/state.md) and the PreToolUse gate that refuses any write the transition table in docs/specs/qa-cycle-state-machine.md disallows for the current phase. Human-only transitions require a matching unconsumed verdict token minted by signoff."
-    },
-    {
-      "name": "signoff",
-      "source": "./signoff",
-      "description": "Human sign-off: /go-no-go records a Go/No-Go/Shipped-Under-Exception verdict against an exit-readiness bundle. Captures an unambiguous verdict from the user's own turn as a single-use token that authorizes exactly one qa-cycle transition."
-    },
-    {
-      "name": "qa-agent-env",
-      "source": "./qa-agent-env",
-      "description": "One-install QA environment bundle: pulls in the whole tokenmaxxxer QA stack (intake, testrun, bugreport, stats, regress, qa-cycle, signoff) as dependencies. Contains no code of its own."
+      "name": "qa",
+      "source": "./qa",
+      "description": "The qa role on contract v3: launch and exercise the real product; verdicts require execution and every verdict cites evidence; report-don't-fix. qa never files issues \u2014 confirmed defects return as bug reports in the qa record via PR, and the user files the issue if valid. Commands: /qa-init (discovery), /testrun (charter + session sheet), /regress (three-check adoption), /qa-stats (PR-outcome trust accounting)."
     }
   ]
 }

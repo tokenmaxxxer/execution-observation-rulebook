@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-shot installer for the tokenmaxxxer QA stack.
-# Registers the marketplace, installs the qa-agent-env bundle (which pulls
+# Registers the marketplace, installs the qa bundle (which pulls
 # every plugin in as a dependency), and refreshes the marketplace once.
 #
 # Installs for your account only (user scope). Uses a real `claude` CLI
@@ -10,7 +10,7 @@
 set -euo pipefail
 
 MARKET="tokenmaxxxer-qa"
-BUNDLE="qa-agent-env"
+BUNDLE="qa"
 GITHUB_REPO="tokenmaxxxer/qa-agent-rulebook"
 
 usage() {
@@ -133,7 +133,7 @@ if [ -n "$CLI" ] && [ -x "$CLI" ]; then
   # A failed install is recorded rather than shrugged off: the closing "installed
   # the full stack" line used to print no matter what happened above it.
   install_failed=""
-  for plugin in intake testrun bugreport stats regress qa-cycle signoff; do
+  for plugin in qa qa qa qa qa qa qa; do
     "$CLI" plugin install "$plugin@$MARKET" --scope user || install_failed="$install_failed $plugin"
   done
   "$CLI" plugin install "$BUNDLE@$MARKET" --scope user || install_failed="$install_failed $BUNDLE"
@@ -142,7 +142,7 @@ if [ -n "$CLI" ] && [ -x "$CLI" ]; then
   # what actually pulls a newer version.
   # Updating the bundle alone would not move its unpinned dependencies, so update
   # each plugin explicitly, same list as the install loop.
-  for plugin in intake testrun bugreport stats regress qa-cycle signoff; do
+  for plugin in qa qa qa qa qa qa qa; do
     "$CLI" plugin update "$plugin@$MARKET" || true
   done
   "$CLI" plugin update "$BUNDLE@$MARKET" || true
@@ -172,5 +172,5 @@ cat <<'MSG'
       auto-update, so future stack additions arrive automatically. There is
       no CLI/config switch for this toggle; it is a one-time interactive step.
     - without auto-update, refresh manually anytime:
-      claude plugin update qa-agent-env@tokenmaxxxer-qa
+      claude plugin update qa@tokenmaxxxer-qa
 MSG
