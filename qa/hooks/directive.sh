@@ -55,14 +55,14 @@ EXECUTION JUDGMENT (phase 2, quality bar):
   user-filed defects, REGRESS-ADOPTED(<path>) / REGRESS-DISCARDED(...) /
   REGRESS-BLOCKED(...).
 
-YOUR RECORD IS THE BOARD (do not skip this): WAKES-ON reads
-docs/issue-<n>/reports/qa.md ONLY — research files, surveys, and
-proposals wake no one. The record is execution-surface material, so:
-write it as your FIRST act of phase 2, and update its loop_state at
-every transition. Ending phase 2 without your record committed on the
-branch means the board never saw your work and no downstream role can
-ever be woken by it. (Measured: a phase-1-only issue left the board
-empty and machine wake-up dead.)
+YOUR RECORD IS THE BOARD (do not skip this): docs/issue-<n>/reports/qa.md
+is the sole phase-2 artifact that matters — research files, surveys, and
+proposals are not it. Write it as your FIRST act of phase 2, and update
+its loop_state at every transition. A record never committed to the
+branch means the work never reached the board. (Measured: a
+phase-1-only issue left the board empty.) For the actual wake-routing
+rule — which record state summons which role — see
+docs/specs/wake-routing.md.
 
 DIRECTIVE
 
