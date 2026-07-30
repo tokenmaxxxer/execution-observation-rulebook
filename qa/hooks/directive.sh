@@ -59,7 +59,9 @@ RECORD REQUIREMENTS (do not skip this): docs/issue-<n>/reports/qa.md is
 the sole phase-2 artifact that matters — research files, surveys, and
 proposals are not it. Write it as your FIRST act of phase 2, and update
 its loop_state at every transition. The record must be committed on the
-branch — an uncommitted record counts as not written.
+branch — an uncommitted record counts as not written. Ending phase 2
+without your record committed on the branch means the record was never
+written. (Measured: a phase-1-only issue left the record empty.)
 
 DIRECTIVE
 
