@@ -8,6 +8,21 @@
       "name": "qa",
       "source": "./qa",
       "description": "The qa role on contract v3: launch and exercise the real product; verdicts require execution and every verdict cites evidence; report-don't-fix. qa never files issues \u2014 confirmed defects return as bug reports in the qa record via PR, and the user files the issue if valid. Commands: /qa-init (discovery), /testrun (charter + session sheet), /regress (three-check adoption), /qa-stats (PR-outcome trust accounting)."
+    },
+    {
+      "name": "eo-directive",
+      "source": "./qa/plugins/eo-directive",
+      "description": "Per-facet phase-1/phase-2 judgment criteria and prohibitions for the execution-observation methodology: what counts as a valid citation, what disqualifies a scope statement, what a proposal may not yet say, what a record must say and in what order."
+    },
+    {
+      "name": "eo-methodology-gate",
+      "source": "./qa/plugins/eo-methodology-gate",
+      "description": "Mechanical PreToolUse verification that a written execution-observation proposal or record actually contains the elements eo-directive requires, fail-closed, path-scoped to this role's own write surfaces only."
+    },
+    {
+      "name": "eo-state",
+      "source": "./qa/plugins/eo-state",
+      "description": "Session-scoped marker enforcing that a phase-2 execution-observation record is never written before at least one artifact of the observed target has been read this session."
     }
   ]
 }

@@ -1,0 +1,7 @@
+{
+  "name": "eo-state",
+  "description": "Session-scoped marker enforcing that a phase-2 execution-observation record is never written before at least one artifact of the observed target has been read this session.",
+  "author": {
+    "name": "Jung Jiwon & Lee Jongkwan"
+  }
+}

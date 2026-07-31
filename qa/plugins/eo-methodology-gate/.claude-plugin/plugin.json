@@ -1,0 +1,7 @@
+{
+  "name": "eo-methodology-gate",
+  "description": "Mechanical PreToolUse verification that a written execution-observation proposal or record actually contains the elements eo-directive requires, fail-closed, path-scoped to this role's own write surfaces only.",
+  "author": {
+    "name": "Jung Jiwon & Lee Jongkwan"
+  }
+}
