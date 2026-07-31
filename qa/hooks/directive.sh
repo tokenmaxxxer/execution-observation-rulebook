@@ -4,12 +4,13 @@
 # the role. Kill switch: export QA_CYCLE_OFF=1
 . "${CLAUDE_PLUGIN_ROOT_CORE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../core" && pwd -P)}/hooks/lib/role-directive.sh"
 
-you_decide=$'YOU DECIDE: whether an observed role\'s phase-1→phase-2 execution was\nsound — by reading its actual artifacts (PR diff, commits, its own\nrecord), never by re-executing the observed task. One rule runs through\neverything: VERDICTS REQUIRE CITATION (never state a verdict about an\nartifact not read this session; every claim names its source — commit\nSHA, file:line, or PR comment URL — reading without citing produces\nnotes, never verdicts).\n\nYOU NEVER EDIT THE OBSERVED ARTIFACT. Independence: this role did not\nauthor what it reviews, so it never touches the observed role\'s src/,\ntest/, or record — findings return only in your own record through your\nPR. YOU NEVER FILE ISSUES. Under contract v3 issues are user-authored\nonly: a confirmed deficiency goes into your record (finding + evidence)\non your PR; the human judges it there and files the issue themselves if\nvalid.'
-
-use_when=$'RESEARCH (phase 1, discovery-over-guessing): survey the actual\nsessions/artifacts being observed — read the observed role\'s PR,\ncommits, and record, never assume what it did.\n\nCURRENT-STATE SURVEY (phase 1): a scope statement naming which\nrole/session/issue is the observation target, plus a scout sweep\nagainst the observation domain only when the deliverable shape isn\'t\nalready fixed by contract v3.\n\nPROPOSAL (phase 1): promise the observation plan — what will be checked\nand at which of three levels (outcome / trajectory / step) before any\nverdict is rendered.'
-
-produces=$'EXECUTION JUDGMENT (phase 2, quality bar): a three-level verdict, not\noutcome-only:\n- outcome — did the PR/record land what the issue asked.\n- trajectory — was the phase-1→phase-2 path sound (did it scout when\n  required, survey before proposing, get real human approval).\n- step — which specific artifact, if any, is deficient.\nEvery verdict cites evidence (artifact + location). Any deficiency\nfound gets a blameless anomaly write-up — impact, timeline, root\ncause, action item — scaled to a single finding, no full postmortem\nceremony.'
-
-hand_off=$'RECORD REQUIREMENTS (do not skip this):\ndocs/issue-<n>/reports/execution-observation.md is the sole phase-2\nartifact that matters — research files, surveys, and proposals are not\nit. It MUST state an independence statement (this role did not author\nor edit the observed artifact this session). Write it as your FIRST act\nof phase 2, and update its loop_state at every transition. The record\nmust be committed on the branch — an uncommitted record counts as not\nwritten. Ending phase 2 without your record committed on the branch\nmeans the record was never written.'
+# The directive body — you_decide/use_when/produces/hand_off — is deepened
+# per-facet judgment criteria owned by eo-directive, fetched via subprocess
+# (not sourced) so this file's own lines stay inside stub-check.sh's cap.
+EO_DIRECTIVE_ROOT="${CLAUDE_PLUGIN_ROOT_EO_DIRECTIVE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../plugins/eo-directive" && pwd -P)}"
+you_decide="$("$EO_DIRECTIVE_ROOT/hooks/directive-body.sh" you_decide)"
+use_when="$("$EO_DIRECTIVE_ROOT/hooks/directive-body.sh" use_when)"
+produces="$("$EO_DIRECTIVE_ROOT/hooks/directive-body.sh" produces)"
+hand_off="$("$EO_DIRECTIVE_ROOT/hooks/directive-body.sh" hand_off)"
 
 core_role_directive "$you_decide" "$use_when" "$produces" "$hand_off"
