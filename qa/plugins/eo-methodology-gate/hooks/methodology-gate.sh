@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-__fc(){ rc=$?; if [ "$rc" != 0 ] && [ "$rc" != 2 ]; then echo "fail-closed: gate aborted (rc=$rc)" >&2; exit 2; fi; }
-trap __fc EXIT
 # PreToolUse gate (Write|Edit|MultiEdit) — this role's own execution-
 # observation methodology write surfaces.
 #
@@ -9,50 +7,67 @@ trap __fc EXIT
 # record) — the two write surfaces described in
 # docs/issue-47/proposals/execution-observation-proposal.md section (2).
 #
-# Structurally modeled on pricing-rulebook's methodology-gate.sh (fail-
-# closed trap, kill-switch off-spelling, python3 JSON-heredoc judge,
-# path-scoped regex, content reconstruction, named-missing-elements
-# denial) — referenced, not copied; field names and paths below are this
-# role's own.
+# Sources the gate-house standard library (core issue-72,
+# docs/handbooks/gate-house-standard.md) for the trap/kill-switch/path-
+# normalize/reconstruct machinery instead of hand-rolling it — reference
+# only, never copied (docs/handbooks/canon-scripts.md). Resolution order
+# for the core plugin root matches qa/hooks/directive.sh's own
+# CLAUDE_PLUGIN_ROOT_CORE convention: the runtime-provided env var first,
+# a `core` checkout sibling to this repo's own root otherwise (local dev).
 #
 # Kill switch: export EXECUTION_OBSERVATION_METHODOLOGY_GATE_OFF=1
+CORE_ROOT="${CLAUDE_PLUGIN_ROOT_CORE:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && git rev-parse --show-toplevel 2>/dev/null)/core}"
+. "$CORE_ROOT/hooks/lib/gate-lib.sh"
+gate_trap_fail_closed
 set -uo pipefail
+gate_kill_switch_active "${EXECUTION_OBSERVATION_METHODOLOGY_GATE_OFF:-}" || { trap - EXIT; exit 0; }
 
 role="${CLAUDE_ROLE:-eo}"
 deny() { echo "${role}: refused — $1" >&2; exit 2; }
-
-case "${EXECUTION_OBSERVATION_METHODOLOGY_GATE_OFF:-}" in
-  ""|0|false|no|off) ;;
-  *) exit 0 ;;
-esac
 
 command -v python3 >/dev/null 2>&1 || deny "methodology-gate.sh requires python3, which is not on PATH; denying rather than guessing."
 
 payload="$(cat 2>/dev/null || true)"
 [ -n "$payload" ] || deny "methodology-gate: empty tool-use payload on stdin; cannot evaluate the methodology gate."
 
-_target="$(printf '%s' "$payload" | python3 -c '
-import json,sys
-try: e=json.loads(sys.stdin.read())
-except Exception: sys.exit(0)
-ti=e.get("tool_input") if isinstance(e,dict) else None
-if isinstance(ti,dict):
-    for k in ("file_path","notebook_path"):
-        v=ti.get(k)
-        if isinstance(v,str) and v: print(v); break
-' 2>/dev/null || true)"
+# Extract the write target for root-discovery purposes, failing closed on
+# malformed JSON here too (not just in the full judge below) via the same
+# gate_lib.gate_parse_json_or_deny the judge uses.
+_target="$(printf '%s' "$payload" | env GATE_LIB_PY="$GATE_LIB_PY" python3 -c '
+import importlib.util, os, sys
+_spec = importlib.util.spec_from_file_location("gate_lib", os.environ["GATE_LIB_PY"])
+gate_lib = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(gate_lib)
+
+def _deny(msg):
+    sys.stderr.write("eo: refused — %s\n" % msg)
+    sys.exit(2)
+
+raw = sys.stdin.read()
+e = gate_lib.gate_parse_json_or_deny(raw, _deny)
+ti = e.get("tool_input") if isinstance(e, dict) else None
+if isinstance(ti, dict):
+    for k in ("file_path", "notebook_path"):
+        v = ti.get(k)
+        if isinstance(v, str) and v:
+            print(v)
+            break
+')"
+_extract_rc=$?
+[ "$_extract_rc" -eq 0 ] || exit "$_extract_rc"
 
 _plausible() { [ -n "$1" ] && [ -d "$1" ] && { [ -e "$1/.git" ] || [ -f "$1/docs/specs/role-handoff-contract.md" ]; }; }
 _under() {
   [ -z "$2" ] && return 0
-  python3 -c '
-import os,posixpath,sys
-r,t=sys.argv[1],sys.argv[2]
-try: rr=posixpath.normpath(os.path.realpath(r).replace("\\","/"))
-except Exception: sys.exit(1)
-n=t.replace("\\","/"); a=n if posixpath.isabs(n) else posixpath.join(rr,n)
-a=posixpath.normpath(a); real=posixpath.normpath(os.path.realpath(a).replace("\\","/"))
-sys.exit(0 if (real==rr or real.startswith(rr+"/")) else 1)
+  env GATE_LIB_PY="$GATE_LIB_PY" python3 -c '
+import importlib.util, os, sys
+_spec = importlib.util.spec_from_file_location("gate_lib", os.environ["GATE_LIB_PY"])
+gate_lib = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(gate_lib)
+root, target = sys.argv[1], sys.argv[2]
+try:
+    real_root = os.path.realpath(root)
+except OSError:
+    sys.exit(1)
+sys.exit(0 if gate_lib.gate_normalize_path(real_root, target) is not None else 1)
 ' "$1" "$2"
 }
 
@@ -71,18 +86,16 @@ EO_PAYLOAD="$payload" EO_ROOT="$root" \
 python3 <<'PY'
 import sys as _fc_sys  # fail-closed-on-internal-error
 try:
-    import json, os, posixpath, re, sys
+    import importlib.util, os, posixpath, re, sys
+
+    _spec = importlib.util.spec_from_file_location("gate_lib", os.environ["GATE_LIB_PY"])
+    gate_lib = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(gate_lib)
 
     def deny(m):
         sys.stderr.write("eo: refused — %s\n" % m); sys.exit(2)
 
     raw = os.environ.get("EO_PAYLOAD", "")
-    try:
-        ev = json.loads(raw) if raw else {}
-    except ValueError:
-        deny("the tool-call payload is not valid JSON; the gate cannot judge methodology fields on an unparseable write.")
-    if not isinstance(ev, dict):
-        deny("the tool-call payload is not a JSON object; failing closed on methodology.")
+    ev = gate_lib.gate_parse_json_or_deny(raw, deny)
 
     tool = ev.get("tool_name")
     ti = ev.get("tool_input")
@@ -93,15 +106,6 @@ try:
     PROPOSAL_RE = re.compile(r'^docs/issue-[0-9]+/proposals/.*execution-observation.*\.md$', re.I)
     RECORD_RE = re.compile(r'^docs/issue-[0-9]+/reports/execution-observation\.md$')
 
-    def resolve(p):
-        n = p.replace("\\", "/")
-        a = n if posixpath.isabs(n) else posixpath.join(root, n)
-        a = posixpath.normpath(a)
-        try:
-            return posixpath.normpath(os.path.realpath(a).replace("\\", "/"))
-        except OSError:
-            return a
-
     path = None
     if tool in ("Write", "Edit", "MultiEdit"):
         p = ti.get("file_path")
@@ -110,121 +114,151 @@ try:
     if path is None:
         sys.exit(0)
 
-    r = resolve(path)
-    if not r.startswith(root + "/"):
-        sys.exit(0)
-    rel = r[len(root):].lstrip("/")
+    rel = gate_lib.gate_normalize_path(root, path)
+    if rel is None:
+        sys.exit(0)  # resolves outside the project root — not this gate's business
 
     is_proposal = bool(PROPOSAL_RE.match(rel))
     is_record = bool(RECORD_RE.match(rel))
     if not (is_proposal or is_record):
-        sys.exit(0)  # not an execution-observation methodology write surface — not this gate's business
+        sys.exit(0)  # not an execution-observation methodology write surface
 
+    real_path = posixpath.join(root, rel) if rel else root
     current = None
-    if os.path.isfile(r):
+    if os.path.isfile(real_path):
         try:
-            with open(r, encoding="utf-8-sig") as fh:
+            with open(real_path, encoding="utf-8-sig") as fh:
                 current = fh.read(1 << 20)
         except OSError:
             deny("%s exists but cannot be read; failing closed on methodology." % rel)
 
-    new_text = None
-    if tool == "Write":
-        c = ti.get("content")
-        if isinstance(c, str):
-            new_text = c
-    elif tool == "Edit":
-        o, n = ti.get("old_string"), ti.get("new_string")
-        if isinstance(o, str) and isinstance(n, str) and current is not None and o in current:
-            new_text = current.replace(o, n, 1)
-    elif tool == "MultiEdit":
-        edits = ti.get("edits")
-        text = current
-        if isinstance(edits, list) and text is not None:
-            ok = True
-            for e in edits:
-                if not isinstance(e, dict):
-                    ok = False; break
-                o, n = e.get("old_string"), e.get("new_string")
-                if not isinstance(o, str) or not isinstance(n, str) or o not in text:
-                    ok = False; break
-                text = text.replace(o, n, 1)
-            if ok:
-                new_text = text
-
-    if new_text is None:
+    new_text, ok = gate_lib.gate_reconstruct_write(tool, ti, current)
+    if not ok:
         deny(
             "this write targets %s but the gate cannot determine the resulting content "
             "from the tool input (tool=%r). Write the full document with Write, or use an "
-            "Edit/MultiEdit whose old_string matches, so the methodology fields can be "
-            "checked." % (rel, tool)
+            "Edit/MultiEdit whose old_string matches (honoring replace_all), so the "
+            "methodology fields can be checked." % (rel, tool)
         )
 
-    low = new_text.lower()
+    # --- structural section parsing (heading -> body), replacing the old
+    # bare-substring "anywhere in the document" checks -----------------
+    HEADING_RE = re.compile(r'^(#{2,3})[ \t]+(.*)$', re.MULTILINE)
 
-    def has_any(*needles):
-        return any(nd in low for nd in needles)
+    def sections(text):
+        marks = list(HEADING_RE.finditer(text))
+        out = []
+        for i, m in enumerate(marks):
+            start = m.end()
+            end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
+            out.append((m.group(2), text[start:end]))
+        return out
+
+    secs = sections(new_text)
+
+    def sections_matching(*needles):
+        for heading_text, body in secs:
+            low_h = heading_text.lower()
+            if any(nd.lower() in low_h for nd in needles):
+                yield heading_text, body
+
+    LEVEL_MARK_RE = re.compile(r'\b(outcome|trajectory|step)\s*[:—-]', re.I)
+    LIST_ITEM_RE = re.compile(r'^\s*[-*]\s+\S', re.MULTILINE)
 
     missing = []
 
     if is_proposal:
-        # a. ## Scope heading
         if "## Scope" not in new_text:
             missing.append("eo-directive: '## Scope' heading missing")
 
-        # b. issue/PR number pattern
         if not (re.search(r'#\d+', new_text) or re.search(r'issue-\d+', new_text, re.I)):
             missing.append("eo-directive: no issue/PR number pattern (#<n> or issue-<n>) present")
 
-        # c. current-state-survey path reference
         if not re.search(r'docs/issue-\d+/reports/execution-observation', new_text, re.I):
             missing.append("eo-directive: no current-state-survey path reference (docs/issue-<n>/reports/execution-observation) present")
 
-        # d. verdict-level plan: at least two of outcome/trajectory/step
-        levels = ("outcome", "trajectory", "step")
-        level_count = sum(1 for w in levels if w in low)
-        if level_count < 2:
-            missing.append("eo-directive: no stated verdict-level plan (need at least two of outcome/trajectory/step)")
+        plan_secs = list(sections_matching("verdict.level", "verdict-level", "plan"))
+        if not any(
+            len({m.group(1).lower() for m in LEVEL_MARK_RE.finditer(body)}) >= 2
+            for _, body in plan_secs
+        ):
+            missing.append(
+                "eo-directive: no verdict-level-plan section (heading matching "
+                "verdict-level/plan) with >=2 of outcome/trajectory/step in "
+                "list/plan position (word immediately followed by ':'/'-'/'—')"
+            )
 
-        # e. plugin-list section
-        if not has_any("플러그인 목록", "plugin list", "plugin 목록"):
-            missing.append("eo-directive: no plugin-list section (플러그인 목록 / plugin list / plugin 목록)")
+        plugin_secs = list(sections_matching("플러그인 목록", "plugin list", "plugin 목록"))
+        if not any(LIST_ITEM_RE.search(body) for _, body in plugin_secs):
+            missing.append("eo-directive: no plugin-list section heading with an actual list item under it (플러그인 목록 / plugin list / plugin 목록)")
 
-        # f. prohibition: premature verdict language
-        verdict_phrases = (
-            "outcome: sound", "outcome: deficient",
-            "trajectory: sound", "trajectory: deficient",
-            "step: sound", "step: deficient",
-        )
-        if has_any(*verdict_phrases):
+        verdict_re = re.compile(r'\b(outcome|trajectory|step)\s*[:—-]\s*(sound|deficient)\b', re.I)
+        if verdict_re.search(new_text):
             missing.append("eo-directive: premature verdict language in phase-1 proposal")
 
     else:  # is_record
-        # a. independence-statement-before-verdict ordering
+        markers = list(LEVEL_MARK_RE.finditer(new_text))
+        low = new_text.lower()
         indep_idx = low.find("independence statement")
-        verdict_markers = ("outcome:", "trajectory:", "step:", "sound", "deficient")
-        marker_idx = None
-        for m in verdict_markers:
-            i = low.find(m)
-            if i != -1 and (marker_idx is None or i < marker_idx):
-                marker_idx = i
-        if marker_idx is not None and (indep_idx == -1 or marker_idx < indep_idx):
+        first_marker_idx = markers[0].start() if markers else None
+        if first_marker_idx is not None and (indep_idx == -1 or first_marker_idx < indep_idx):
             missing.append("eo-directive: independence-before-verdict-ordering")
 
-        # b. all three verdict levels present
-        levels = ("outcome", "trajectory", "step")
-        absent_levels = [w for w in levels if w not in low]
+        levels_present = {m.group(1).lower() for m in markers}
+        absent_levels = [w for w in ("outcome", "trajectory", "step") if w not in levels_present]
         if absent_levels:
             missing.append("eo-directive: missing-verdict-level(s): %s" % ", ".join(absent_levels))
 
-        # c. blameless shape, only when a deficiency/finding is claimed
-        if has_any("deficient", "finding"):
-            blameless = ("impact", "timeline", "root cause", "action item")
-            absent_blameless = [w for w in blameless if w not in low]
+        if re.search(r'deficient|finding', new_text, re.I):
+            BLAMELESS = ("impact", "timeline", "root cause", "action item")
+            lines = new_text.split("\n")
+            line_starts = []
+            pos = 0
+            for ln in lines:
+                line_starts.append(pos)
+                pos += len(ln) + 1
+
+            def line_of(offset):
+                lo, hi = 0, len(line_starts) - 1
+                while lo < hi:
+                    mid = (lo + hi + 1) // 2
+                    if line_starts[mid] <= offset:
+                        lo = mid
+                    else:
+                        hi = mid - 1
+                return lo
+
+            trigger_lines = sorted({line_of(m.start()) for m in re.finditer(r'deficient|finding', new_text, re.I)})
+
+            def section_span_for_line(idx):
+                heads = list(HEADING_RE.finditer(new_text))
+                cur_start, cur_end = 0, len(lines)
+                for i, m in enumerate(heads):
+                    s = line_of(m.start())
+                    e = line_of(heads[i + 1].start()) if i + 1 < len(heads) else len(lines)
+                    if s <= idx < e:
+                        cur_start, cur_end = s, e
+                return cur_start, cur_end
+
+            found = {label: False for label in BLAMELESS}
+            for t_idx in trigger_lines:
+                s, e = section_span_for_line(t_idx)
+                window_lo = min(s, t_idx + 1)
+                window_hi = max(e, t_idx + 6)
+                window_hi = min(window_hi, len(lines))
+                for li in range(window_lo, window_hi):
+                    ln = lines[li]
+                    for label in BLAMELESS:
+                        if found[label]:
+                            continue
+                        if re.match(r'^#{2,4}.*' + re.escape(label), ln, re.I) or \
+                           re.match(r'^\s*\*\*' + re.escape(label), ln, re.I):
+                            found[label] = True
+
+            absent_blameless = [w for w in BLAMELESS if not found[w]]
             if absent_blameless:
                 missing.append("eo-directive: blameless-shape-incomplete: %s" % ", ".join(absent_blameless))
 
-        # d. eo-state marker-shaped check
         marker_path = posixpath.join(root, ".claude", ".eo-read-marker")
         if not os.path.isfile(marker_path):
             missing.append("eo-state: eo-state-marker-missing (.claude/.eo-read-marker not present — no artifact of the observed target has been read this session)")
