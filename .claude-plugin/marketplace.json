@@ -7,7 +7,7 @@
     {
       "name": "qa",
       "source": "./qa",
-      "description": "The qa role on contract v3: launch and exercise the real product; verdicts require execution and every verdict cites evidence; report-don't-fix. qa never files issues \u2014 confirmed defects return as bug reports in the qa record via PR, and the user files the issue if valid. Commands: /qa-init (discovery), /testrun (charter + session sheet), /regress (three-check adoption), /qa-stats (PR-outcome trust accounting)."
+      "description": "The execution-observation role on contract v3: judge whether an observed role's phase-1\u2192phase-2 execution was sound by reading its actual artifacts (PR diff, commits, its own record), never by re-executing the observed task; every verdict cites evidence. execution-observation never edits the observed artifact and never files issues \u2014 confirmed deficiencies return as findings in its own record via PR, and the user files the issue if valid."
     },
     {
       "name": "eo-directive",

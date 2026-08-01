@@ -41,8 +41,8 @@ else
 fi
 
 # --- substance probe: an empty qa record must be refused ------------------
-probe_dir="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../qa/hooks" && pwd -P)}"
-rec_rel="docs/issue-999/reports/qa.md"
+probe_dir="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../qa" && pwd -P)}"
+rec_rel="docs/issue-999/reports/execution-observation.md"
 
 substance_probe() {
   gates="$(find "$probe_dir" -name '*-gate.sh' -type f 2>/dev/null || true)"
