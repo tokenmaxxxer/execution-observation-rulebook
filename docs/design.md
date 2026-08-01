@@ -1,4 +1,4 @@
-# qa-agent-rulebook — design record
+# execution-observation-rulebook — design record
 
 *[한국어](design.ko.md)*
 
@@ -74,7 +74,7 @@ the product repos.)
    scheme, evidence rules). Standards change by PR here and propagate by
    plugin update.
 2. **QA-agent layer — a user-scope install.** `/plugin marketplace add` +
-   `/plugin install qa-agent-env@tokenmaxxxer-qa`, once, in the environment
+   `/plugin install qa-agent-env@tokenmaxxxer-execution-observation`, once, in the environment
    (interactive or headless) that performs QA. Secrets (values for the env
    vars the profile names) and `QA_*_OFF` kill switches live here too.
 3. **Project layer — one committed file per target repo.** `qa/intake.md`:
