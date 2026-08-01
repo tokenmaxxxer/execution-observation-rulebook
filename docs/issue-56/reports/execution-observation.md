@@ -241,3 +241,58 @@ same reason (each was a comment/doc line naming the now-moved path, not a
 functional dependency, but left as originally worded they would have been
 freshly-introduced stale references — exactly what the proposal's own
 step-level check warns against).
+
+## Addendum (2026-08-01 follow-up: commit-closure verification)
+
+This session did not author or edit any observed role's artifact —
+`install.sh` and the other files touched here are this role's own
+in-scope remediation of issue #56 requirement 1, not another role's
+output.
+
+Verified this session, before touching anything: `git show
+fbe5c81:install.sh | grep -n 'MARKET=\|BUNDLE=\|GITHUB_REPO='` returned
+`MARKET="tokenmaxxxer-qa"`, `BUNDLE="qa"`,
+`GITHUB_REPO="tokenmaxxxer/qa-agent-rulebook"` — i.e. the merged PR #58
+(commit `fbe5c81`) never actually landed the `install.sh` content fix
+this record's body above describes; the fix existed only as an
+uncommitted working-tree edit left over from the prior session, so per
+"미커밋 변경은 존재하지 않는 것과 같다" it counted as not done. This
+session's job was to commit it, not redo it.
+
+Content of the uncommitted edit was verified correct
+(`install.sh:12-14` now `MARKET="tokenmaxxxer-execution-observation"`,
+`BUNDLE="execution-observation"`,
+`GITHUB_REPO="tokenmaxxxer/execution-observation-rulebook"`;
+`install.sh:171` `tokenmaxxxer-execution-observation`; `install.sh:175`
+`execution-observation@tokenmaxxxer-execution-observation`), then a
+repo-wide grep surfaced one further remnant the prior session's diff had
+not covered: `README.md:69` still read
+`claude plugin install qa@tokenmaxxxer-execution-observation` (wrong
+bundle name, `qa` instead of `execution-observation`) — fixed this
+session to
+`claude plugin install execution-observation@tokenmaxxxer-execution-observation`.
+
+Full-repo grep evidence, run this session after all fixes:
+
+```
+$ grep -rn "tokenmaxxxer-qa\|qa-agent-rulebook\|qa@tokenmaxxxer" . --include=*.json --include=*.sh --include=*.md 2>/dev/null | grep -v "^\./docs/\|^\./\.git/"
+(no output — zero remnants outside docs/)
+```
+
+The only remaining hits are inside `docs/`: this record's own narrative
+(quoting the old names as history), other historical `docs/reports/*`
+and `docs/issue-*` files describing past states, and
+`docs/design.md:1,77` / `docs/design.ko.md:1,72` — the same
+board-gate-blocked step-level deficiency already recorded above under
+**step**, unchanged and still open.
+
+Re-ran the full test suite this session after the fix:
+`tests/run-gate-tests.sh` → `24 passed, 0 failed`;
+`tests/deny-only-check.sh` → both checks `ok`; `tests/fetch-core.sh` →
+resolved the core rulebook path with no error; `tests/parse-check.sh` →
+`ok directive.sh`, `1 file(s) under /bin/bash`.
+
+All of the above (`install.sh`, `README.md`, `.claude-plugin/marketplace.json`,
+`execution-observation/**`, `tests/*.sh`, and this record) were committed
+together on this branch this session, closing the "record != committed"
+gap this addendum opened with.

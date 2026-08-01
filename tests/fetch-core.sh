@@ -6,7 +6,7 @@
 # copy rule; stub-check.sh's canon-manifest.txt catches a vendored copy).
 #
 # Resolution order: CLAUDE_PLUGIN_ROOT_CORE (a real plugin install) > a
-# ./core sibling checked out for local dev, matching qa/hooks/directive.sh's
+# ./core sibling checked out for local dev, matching execution-observation/hooks/directive.sh's
 # own fallback convention > a cached shallow clone under $TMPDIR (test-only,
 # network-fetched once per cache lifetime, never committed).
 #

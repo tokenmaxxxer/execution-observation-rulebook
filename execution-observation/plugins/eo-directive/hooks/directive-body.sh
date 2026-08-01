@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Executed (not sourced) by qa/hooks/directive.sh, once per variable name via
+# Executed (not sourced) by execution-observation/hooks/directive.sh, once per variable name via
 # command substitution — kept a subprocess rather than a sourced file so
 # directive.sh's own lines stay inside tests/stub-check.sh's structural cap
 # (source line / plain var assignment / core_role_directive call only).

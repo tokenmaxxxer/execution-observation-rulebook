@@ -11,7 +11,7 @@
 # docs/handbooks/gate-house-standard.md) for the trap/kill-switch/path-
 # normalize/reconstruct machinery instead of hand-rolling it — reference
 # only, never copied (docs/handbooks/canon-scripts.md). Resolution order
-# for the core plugin root matches qa/hooks/directive.sh's own
+# for the core plugin root matches execution-observation/hooks/directive.sh's own
 # CLAUDE_PLUGIN_ROOT_CORE convention: the runtime-provided env var first,
 # a `core` checkout sibling to this repo's own root otherwise (local dev).
 #

@@ -1,8 +1,8 @@
 # eo-directive
 
 Supplies the four directive-body variables — `you_decide`, `use_when`,
-`produces`, `hand_off` — sourced by `qa/hooks/directive.sh` (via
-`hooks/directive-body.sh`), which itself makes the final
+`produces`, `hand_off` — sourced by `execution-observation/hooks/directive.sh`
+(via `hooks/directive-body.sh`), which itself makes the final
 `core_role_directive` call. This plugin only defines content; it has no
 hook of its own.
 
@@ -23,6 +23,6 @@ hook of its own.
 ## Kill switch
 
 This plugin ships no hook and has no independent kill switch. It is
-sourced content only, consumed by `qa/hooks/directive.sh`, which is
-already gated by `QA_CYCLE_OFF`. Disabling qa's SessionStart directive
-disables this plugin's content along with it.
+sourced content only, consumed by `execution-observation/hooks/directive.sh`.
+Disabling execution-observation's SessionStart directive disables this
+plugin's content along with it.

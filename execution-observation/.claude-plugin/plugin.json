@@ -1,5 +1,5 @@
 {
-  "name": "qa",
+  "name": "execution-observation",
   "description": "The execution-observation role on contract v3: judge whether an observed role's phase-1\u2192phase-2 execution was sound by reading its actual artifacts (PR diff, commits, its own record), never by re-executing the observed task; every verdict cites evidence. execution-observation never edits the observed artifact and never files issues \u2014 confirmed deficiencies return as findings in its own record via PR, and the user files the issue if valid.",
   "author": {
     "name": "Jung Jiwon & Lee Jongkwan"
