@@ -1,4 +1,4 @@
-# qa-agent-rulebook — 설계 기록
+# execution-observation-rulebook — 설계 기록
 
 *[English](design.md)*
 
@@ -69,7 +69,7 @@ QA directive가 제품 레포의 비-QA 세션에 닿지 않도록 뒤집었다.
    여기에 PR로 이뤄지고 플러그인 업데이트로 전파된다.
 2. **QA 에이전트층 — 유저 스코프 설치.** QA를 수행하는 환경(대화형이든
    헤드리스든)에 `/plugin marketplace add` + `/plugin install
-   qa-agent-env@tokenmaxxxer-qa` 한 번. 시크릿(프로파일이 이름만 적어둔
+   qa-agent-env@tokenmaxxxer-execution-observation` 한 번. 시크릿(프로파일이 이름만 적어둔
    env var의 값)과 `QA_*_OFF` kill switch도 이 층에 산다.
 3. **프로젝트층 — 대상 레포마다 커밋되는 파일 1개.** `qa/intake.md`:
    방문하는 모든 QA 세션이 읽는 프로파일(트래커, 템플릿, 라벨, 기동법).
