@@ -18,7 +18,7 @@
 # recognized on-spelling (1/true/yes/on) disables; every other value,
 # recognized-off or unrecognized (e.g. a typo), stays active. Reference
 # only, never copied (docs/handbooks/canon-scripts.md); same
-# CLAUDE_PLUGIN_ROOT_CORE resolution convention as qa/hooks/directive.sh.
+# CLAUDE_PLUGIN_ROOT_CORE resolution convention as execution-observation/hooks/directive.sh.
 CORE_ROOT="${CLAUDE_PLUGIN_ROOT_CORE:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && git rev-parse --show-toplevel 2>/dev/null)/core}"
 . "$CORE_ROOT/hooks/lib/gate-lib.sh" || { echo "state.sh: cannot source gate-lib.sh" >&2; exit 2; }
 gate_kill_switch_active "${EXECUTION_OBSERVATION_STATE_OFF:-}" || exit 0

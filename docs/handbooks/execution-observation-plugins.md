@@ -76,6 +76,19 @@ marker's existence. Its own kill switch (`EXECUTION_OBSERVATION_STATE_OFF`)
 is likewise migrated to `gate_lib.gate_kill_switch_active`; it has no
 reconstruction/path-normalize logic to migrate (not a `PreToolUse` gate).
 
+## Install
+
+`install.sh` at the repo root registers the `tokenmaxxxer-execution-observation`
+marketplace (source `tokenmaxxxer/execution-observation-rulebook`) and
+installs/updates the `execution-observation` bundle plus each `eo-*`
+plugin explicitly, at user scope. It is a plain rename target: its
+`MARKET`/`BUNDLE`/`GITHUB_REPO` variables and closing-banner text must be
+kept in sync with the marketplace/plugin names above whenever either
+changes — issue #56 found `install.sh` still carrying the old `qa`/
+`tokenmaxxxer-qa` names after the `qa/` → `execution-observation/`
+directory rename, since the two are not otherwise coupled by anything
+that would fail loudly.
+
 ## Tests
 
 `tests/run-gate-tests.sh` resolves a core canon checkout via

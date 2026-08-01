@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# SessionStart: qa's role directive — how this role fills each stage of
-# the core lifecycle. core's directive carries the protocol; this carries
-# the role. Kill switch: export QA_CYCLE_OFF=1
+# SessionStart: execution-observation's role directive — how this role
+# fills each stage of the core lifecycle. core's directive carries the
+# protocol; this carries the role.
 . "${CLAUDE_PLUGIN_ROOT_CORE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../core" && pwd -P)}/hooks/lib/role-directive.sh"
 
 # The directive body — you_decide/use_when/produces/hand_off — is deepened

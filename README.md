@@ -66,7 +66,7 @@ migration, test-case inventory).
 ## Install
 
     claude plugin marketplace add tokenmaxxxer/execution-observation-rulebook
-    claude plugin install qa@tokenmaxxxer-execution-observation
+    claude plugin install execution-observation@tokenmaxxxer-execution-observation
 
 Kill switches: `EXECUTION_OBSERVATION_METHODOLOGY_GATE_OFF=1`,
 `EXECUTION_OBSERVATION_STATE_OFF=1`.

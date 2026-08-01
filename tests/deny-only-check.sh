@@ -41,7 +41,7 @@ else
 fi
 
 # --- substance probe: an empty qa record must be refused ------------------
-probe_dir="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../qa" && pwd -P)}"
+probe_dir="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../execution-observation" && pwd -P)}"
 rec_rel="docs/issue-999/reports/execution-observation.md"
 
 substance_probe() {

@@ -42,7 +42,7 @@ Sources `core/hooks/lib/gate-lib.sh` (bash) and loads `gate-lib.py` via
 issue-72, `docs/handbooks/gate-house-standard.md`) — instead of hand-rolling
 the trap/kill-switch/path-normalize/reconstruct machinery. Reference only,
 never copied (`docs/handbooks/canon-scripts.md`). Resolves the core plugin
-root the same way `qa/hooks/directive.sh` does: `CLAUDE_PLUGIN_ROOT_CORE` if
+root the same way `execution-observation/hooks/directive.sh` does: `CLAUDE_PLUGIN_ROOT_CORE` if
 set, else a `core` checkout sibling to this repo's own root.
 
 ## Fail-closed

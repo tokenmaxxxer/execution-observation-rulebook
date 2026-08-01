@@ -2,7 +2,7 @@
 # The surviving review gates, exercised as real subprocesses.
 #
 # record-fields-gate.sh and trailer-gate.sh no longer exist under
-# qa/hooks/ — they are core canon hooks now (core/hooks/hooks.json fires
+# execution-observation/hooks/ — they are core canon hooks now (core/hooks/hooks.json fires
 # them globally per issue-66/stub-check.sh's drift-recurrence contract).
 # The dead cases that used to exercise the local copies of those two
 # filenames are removed here rather than fixed (issue #50's audit finding
@@ -17,7 +17,7 @@ export CLAUDE_PLUGIN_ROOT_CORE="$CORE_ROOT"
 pass=0; fail=0
 report() { if [ "$2" = "$1" ]; then pass=$((pass+1)); printf 'ok     %-34s %s\n' "$3" "$2"; else fail=$((fail+1)); printf 'FAIL   %-34s want=%s got=%s\n' "$3" "$1" "$2"; fi; }
 
-EOGATE="$HERE/../qa/plugins/eo-methodology-gate/hooks/methodology-gate.sh"
+EOGATE="$HERE/../execution-observation/plugins/eo-methodology-gate/hooks/methodology-gate.sh"
 
 # eogate <want> <name> <file> <content> [marker]
 # Write-tool convenience wrapper over eogate_raw, used by every case that
