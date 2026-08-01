@@ -13,14 +13,15 @@
 #
 # Kill switch: export EXECUTION_OBSERVATION_STATE_OFF=1
 
-# Off means off: `X_OFF=0` and `X_OFF=false` read as "not off" to a user and
-# to most tooling, but any non-empty value used to disable the hook — the
-# kill switch would otherwise silently kill it on exactly the spelling meant
-# to keep it alive.
-case "${EXECUTION_OBSERVATION_STATE_OFF:-}" in
-  ""|0|false|no|off) ;;
-  *) exit 0 ;;
-esac
+# Sources the gate-house standard library (core issue-72) for the fixed
+# kill-switch convention instead of hand-rolling the case statement: only a
+# recognized on-spelling (1/true/yes/on) disables; every other value,
+# recognized-off or unrecognized (e.g. a typo), stays active. Reference
+# only, never copied (docs/handbooks/canon-scripts.md); same
+# CLAUDE_PLUGIN_ROOT_CORE resolution convention as qa/hooks/directive.sh.
+CORE_ROOT="${CLAUDE_PLUGIN_ROOT_CORE:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && git rev-parse --show-toplevel 2>/dev/null)/core}"
+. "$CORE_ROOT/hooks/lib/gate-lib.sh"
+gate_kill_switch_active "${EXECUTION_OBSERVATION_STATE_OFF:-}" || exit 0
 
 # Root resolution: the project directory, normalized to the git top level
 # when there is one, matching the convention used across this repo's other
