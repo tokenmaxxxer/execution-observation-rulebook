@@ -232,5 +232,12 @@ print(json.dumps({"tool_name": "Write", "tool_input": {"file_path": "./" + sys.a
 ' "$RECORD" "$RECORD_NO_MARKER")"
 eogate_raw deny eo-dotslash-path-same-verdict-as-relative "$RECORD" "$DOTSLASH_PAYLOAD_TMPL" ""
 
+# --- mandatory case: missing-core -> guarded gate-lib.sh source must deny,
+# not silently allow (core #75 fix, mirrored here per this issue's
+# requirement 3) -------------------------------------------------------------
+eogate_raw deny eo-missing-core-guarded-source-denies "$RECORD" \
+  "$(python3 -c 'import json,sys; print(json.dumps({"tool_name":"Write","tool_input":{"file_path":sys.argv[1],"content":"x"},"cwd":"PLACEHOLDER"}))' "$RECORD")" \
+  "" "CLAUDE_PLUGIN_ROOT_CORE=/no/such/core"
+
 printf '\n== %d passed, %d failed ==\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

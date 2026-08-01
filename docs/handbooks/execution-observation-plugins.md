@@ -93,8 +93,17 @@ allow, and the issue's six mandatory case groups — `Edit` with
 `replace_all` against a multiply-occurring match, `MultiEdit` with mixed
 `replace_all` true/false in one call, malformed JSON (truncated,
 non-object, empty), a kill-switch typo staying active vs. a recognized
-on-value disabling it, and absolute/`./`-prefixed `file_path` resolving to
-the same verdict as the relative-path fixture. The dead
-`record-fields-gate.sh`/`trailer-gate.sh` cases (7, 2 already
-`true ||`-disabled) that exercised files no longer present in this repo
-(core canon now, per `tests/stub-check.sh`) are removed rather than fixed.
+on-value disabling it, absolute/`./`-prefixed `file_path` resolving to
+the same verdict as the relative-path fixture, and (issue-53) a
+missing-core case — `CLAUDE_PLUGIN_ROOT_CORE` pointed at a nonexistent
+path with no valid relative fallback — asserting the guarded
+`gate-lib.sh` source line denies (exit 2), mirroring core #75's own
+mandatory group 7. The dead `record-fields-gate.sh`/`trailer-gate.sh`
+cases (7, 2 already `true ||`-disabled) that exercised files no longer
+present in this repo (core canon now, per `tests/stub-check.sh`) are
+removed rather than fixed.
+
+Both `state.sh` and `methodology-gate.sh` source `gate-lib.sh` with the
+`||`-guarded form core #75 landed (`. ".../gate-lib.sh" || { echo
+"<gate>: cannot source gate-lib.sh" >&2; exit 2; }`), verified clean by
+core #75's own `compliance-check.sh` (issue-53).
