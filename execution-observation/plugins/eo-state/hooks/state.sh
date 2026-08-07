@@ -19,7 +19,7 @@
 # recognized-off or unrecognized (e.g. a typo), stays active. Reference
 # only, never copied (docs/handbooks/canon-scripts.md); same
 # CLAUDE_PLUGIN_ROOT_CORE resolution convention as execution-observation/hooks/directive.sh.
-CORE_ROOT="${CLAUDE_PLUGIN_ROOT_CORE:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && git rev-parse --show-toplevel 2>/dev/null)/core}"
+CORE_ROOT="${CLAUDE_PLUGIN_ROOT_CORE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../core" && pwd -P)}"
 . "$CORE_ROOT/hooks/lib/gate-lib.sh" || { echo "state.sh: cannot source gate-lib.sh" >&2; exit 2; }
 gate_kill_switch_active "${EXECUTION_OBSERVATION_STATE_OFF:-}" || exit 0
 
@@ -55,8 +55,9 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
       if printf '%s' "$payload" | grep -qE 'docs/issue-[^"]*/(reports|proposals)/' \
         || printf '%s' "$payload" | grep -qE 'gh (api|pr)'; then
         marker="$(eo_state_marker_path)"
-        mkdir -p "$(dirname "$marker")" 2>/dev/null
-        date +%s > "$marker" 2>/dev/null
+        if ! mkdir -p "$(dirname "$marker")" 2>/dev/null || ! date +%s > "$marker" 2>/dev/null; then
+          echo "state.sh: mark: failed to write marker at $marker" >&2
+        fi
       fi
       ;;
   esac

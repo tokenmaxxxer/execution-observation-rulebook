@@ -16,7 +16,7 @@
 # a `core` checkout sibling to this repo's own root otherwise (local dev).
 #
 # Kill switch: export EXECUTION_OBSERVATION_METHODOLOGY_GATE_OFF=1
-CORE_ROOT="${CLAUDE_PLUGIN_ROOT_CORE:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && git rev-parse --show-toplevel 2>/dev/null)/core}"
+CORE_ROOT="${CLAUDE_PLUGIN_ROOT_CORE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../core" && pwd -P)}"
 . "$CORE_ROOT/hooks/lib/gate-lib.sh" || { echo "methodology-gate.sh: cannot source gate-lib.sh" >&2; exit 2; }
 gate_trap_fail_closed
 set -uo pipefail
@@ -260,8 +260,12 @@ try:
                 missing.append("eo-directive: blameless-shape-incomplete: %s" % ", ".join(absent_blameless))
 
         marker_path = posixpath.join(root, ".claude", ".eo-read-marker")
+        marker_dir = posixpath.join(root, ".claude")
         if not os.path.isfile(marker_path):
-            missing.append("eo-state: eo-state-marker-missing (.claude/.eo-read-marker not present — no artifact of the observed target has been read this session)")
+            if os.path.isdir(marker_dir) and not os.access(marker_dir, os.R_OK | os.X_OK):
+                missing.append("eo-state: eo-state-marker-unavailable (.claude/ exists but is not inspectable — this may be a marker-write failure, not an unread artifact)")
+            else:
+                missing.append("eo-state: eo-state-marker-missing (.claude/.eo-read-marker not present — no artifact of the observed target has been read this session)")
 
     if missing:
         deny(
