@@ -1,5 +1,5 @@
 ---
-status: approved
+status: landed
 ---
 
 # qa rulebook conformance to role-handoff-contract v2 (blackboard/event model)
