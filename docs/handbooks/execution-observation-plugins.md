@@ -45,6 +45,18 @@ surfaces only:
 
 Any other path is out of scope for this gate (`sys.exit(0)`).
 
+The spec fields (`subject`/`test`/`result`/`assertedBy`/`mode`) and the
+`loop_state` state names (`running`/`collecting-evidence`/`handed-off`/
+`execution-not-possible`/`environment-setup-failed`) that
+`roles/specs/execution-observation.spec.json` (`tokenmaxxxer/on-the-record`)
+declares are the canonical vocabulary this gate's structural checks track
+— `outcome`/`trajectory`/`step` markers stay this gate's own structural
+check, but the evidence a `step`-level finding cites is expected in that
+per-claim shape. Reference-resolution enforcement (whether a cited
+`assertedBy`/source actually resolves) lives upstream in
+`on-the-record/hooks/role-spec-reference-guard.sh`, referenced here, never
+forked into this gate.
+
 Migrated onto the gate-house standard library (core issue-72,
 `docs/handbooks/gate-house-standard.md`): sources `core/hooks/lib/
 gate-lib.sh` and loads `gate-lib.py` via `importlib`, replacing the
