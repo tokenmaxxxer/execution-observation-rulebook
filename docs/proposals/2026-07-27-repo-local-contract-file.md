@@ -1,5 +1,5 @@
 ---
-status: approved
+status: landed
 files:
   - docs/specs/role-handoff-contract.md
   - qa-cycle/hooks/tests/run-gate-tests.sh
