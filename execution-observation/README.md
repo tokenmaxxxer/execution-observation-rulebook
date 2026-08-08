@@ -31,6 +31,14 @@ in its own record via its own PR, and the user files the issue if valid.
 
 `docs/issue-<n>/reports/execution-observation.md`, phase-gated per contract
 v3 §19: written as the first act of phase 2, updating `loop_state` at
-every transition. Phase-1 output (current-state survey, proposal) lives
-under `docs/issue-<n>/reports/execution-observation/` and
+every transition using the state names
+`roles/specs/execution-observation.spec.json` (`tokenmaxxxer/on-the-record`)
+declares — `running`/`collecting-evidence` in progress, `handed-off`
+terminal, `execution-not-possible` refusal, `environment-setup-failed`
+error. Each `step`-level finding in the record cites the spec's per-claim
+fields (`subject`, `test`, `result`, `assertedBy`, `mode`); `outcome` is
+the spec's worst-case recomputation across a record's cited `step`-level
+results, never a standalone summary. Phase-1 output (current-state
+survey, proposal) lives under
+`docs/issue-<n>/reports/execution-observation/` and
 `docs/issue-<n>/proposals/`.
