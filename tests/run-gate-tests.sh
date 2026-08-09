@@ -11,7 +11,18 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
-CORE_ROOT="$("$HERE/fetch-core.sh")" || { echo "run-gate-tests: cannot resolve core canon (gate-lib.sh) — see fetch-core.sh output above" >&2; exit 2; }
+CORE_ROOT="$("$HERE/fetch-core.sh")"
+rc=$?
+if [ "$rc" -eq 75 ]; then
+  # SKIP contract, tokenmaxxxer/on-the-record docs/specs/test-env-resolution.md
+  # (issue #551): propagate the skip verbatim rather than masking or
+  # failing it — 75 is distinct from this runner's own deny exit (2).
+  echo "SKIP: core plugin unreachable — unverifiable outside spawn env" >&2
+  exit 75
+elif [ "$rc" -ne 0 ]; then
+  echo "run-gate-tests: cannot resolve core canon (gate-lib.sh) — see fetch-core.sh output above" >&2
+  exit 2
+fi
 export CLAUDE_PLUGIN_ROOT_CORE="$CORE_ROOT"
 
 pass=0; fail=0
