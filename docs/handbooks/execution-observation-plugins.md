@@ -108,7 +108,15 @@ that would fail loudly.
 a local `core` sibling checkout, or a cached shallow clone under `$TMPDIR`
 — never vendored into this repo) and exports it as
 `CLAUDE_PLUGIN_ROOT_CORE` so `eo-methodology-gate`/`eo-state` can source
-the real `gate-lib.sh`. It carries the `eo-*` cases (real subprocess
+the real `gate-lib.sh`. Outside the spawn env — none of the three
+candidates resolve — `fetch-core.sh` follows tokenmaxxxer/on-the-record's
+SKIP contract (`docs/specs/test-env-resolution.md`, issue #551): it
+prints `SKIP: core plugin unreachable — unverifiable outside spawn env`
+to stderr and exits `75` (`EX_TEMPFAIL`), distinct from the gate's own
+0 (allow)/1/2 (deny) exits; `run-gate-tests.sh` propagates that exit 75
+verbatim rather than masking it as pass or fail, and keeps `exit 2` only
+for a genuine resolution defect (any other non-zero exit from
+`fetch-core.sh`). With core resolved, it carries the `eo-*` cases (real subprocess
 invocation of `eo-methodology-gate/hooks/methodology-gate.sh`, synthetic
 `PreToolUse` JSON on stdin, tempdir `git init`): proposal
 complete/missing-survey/missing-plugin-list/premature-verdict/mention-
