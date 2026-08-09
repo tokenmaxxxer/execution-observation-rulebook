@@ -45,10 +45,13 @@ own gate-test scripts... is separate work per repo."
   It then runs ~20 `eogate`/`eogate_raw`/`eogate_edit_file` assertion
   cases against `eo-methodology-gate/hooks/methodology-gate.sh`, all of
   which require a resolved `CLAUDE_PLUGIN_ROOT_CORE`.
-- No other test scripts touch core resolution. `tests/` contains exactly
-  these two files (confirmed via `find`); `tests/stub-check.sh` mentioned
-  in the handbook does not exist in the current tree (handbook prose may
-  be stale, out of scope here — not a write-set file for this issue).
+- `tests/` also contains `deny-only-check.sh`, `parse-check.sh`, and
+  `stub-check.sh` (missed by an initial `find -iname '*test*'` sweep,
+  since none of those filenames contain "test" — caught by the
+  after-proposal warrant hunt). None of the three resolve
+  `CLAUDE_PLUGIN_ROOT_CORE` or call `fetch-core.sh`, so none are a core-
+  resolution consumer this issue's convention applies to; they stay out
+  of the write set.
 - The network-fetch fallback (step 3 of the current script) is exactly
   the "repo-local extension a consumer MAY layer on top of step 2's
   candidate list" the convention doc calls out — it is allowed to stay,

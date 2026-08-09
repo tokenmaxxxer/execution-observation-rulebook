@@ -83,9 +83,10 @@ Two ways to realize the convention in this repo were considered:
   Rationale, alternative 1 — rejected).
 - Changing any `eogate*`/`eogate_raw`/`eogate_edit_file` assertion logic
   or expected verdicts — only the unresolved-core path changes.
-- `tests/stub-check.sh`, referenced by the handbook but absent from the
-  current tree — pre-existing handbook staleness unrelated to this
-  issue, not touched here.
+- `tests/stub-check.sh`, `deny-only-check.sh`, `parse-check.sh` — present
+  in the tree but none resolve `CLAUDE_PLUGIN_ROOT_CORE` or call
+  `fetch-core.sh`, so they are not core-resolution consumers this
+  convention applies to.
 - Any other repo's adoption of the convention — out of scope per the
   convention doc itself ("separate work per repo").
 
