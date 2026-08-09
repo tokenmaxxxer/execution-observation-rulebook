@@ -80,9 +80,37 @@ None.
     section updated to describe the SKIP contract.
 
 ## Open findings
-None open. The after-proposal warrant hunt (recorded under
-`docs/issue-67/reports/`) surfaced no unresolved finding blocking this
-build.
+None open for this issue's scope. The after-proposal warrant hunt
+(recorded under `docs/issue-67/reports/`) surfaced no unresolved finding
+blocking this build.
+
+Phase-2 continuation live check (ran every script under `tests/`,
+`*/tests/`, `*/hooks/tests/` — this repo has exactly one such directory,
+`tests/`, with 5 scripts — under `CLAUDE_PLUGIN_ROOT_CORE` unset, no
+`../core` sibling, and the core-cache network fetch forced unreachable
+via a blackholed proxy):
+- `tests/fetch-core.sh` and `tests/run-gate-tests.sh`: both correctly
+  emit the SKIP contract (`SKIP: core plugin unreachable — unverifiable
+  outside spawn env`, exit 75) — confirms the earlier verification run
+  above, now under a harder-forced unreachable condition (proxy-blocked
+  network, not just an unset env var with network still open).
+- `tests/deny-only-check.sh` and `tests/parse-check.sh`: neither touches
+  `CLAUDE_PLUGIN_ROOT_CORE` or `fetch-core.sh` at all — both pass
+  unconditionally regardless of core reachability; nothing to adopt.
+- `tests/stub-check.sh`: fails (exit 1) both with and without
+  `CLAUDE_PLUGIN_ROOT_CORE` set — identical output either way, so this
+  is not a core-reachability/SKIP-contract issue. It is a real,
+  independent defect: a vendored copy of `parse-check.sh` still exists
+  under `tests/` after that file became a core hook (per the script's
+  own issue-66 message). Recorded here rather than masked or
+  silently fixed — out of this issue's frozen write set (test-env
+  resolution adoption), belongs to a follow-up under issue-66's drift
+  contract.
+
+Conclusion: this branch's test-env resolution adoption already covers
+every core-touching script in this repo; no further script changes were
+needed. `tests/stub-check.sh`'s failure is a pre-existing, unrelated
+defect left as an open finding for a separate fix.
 
 ## Warrant hunt (before-landing)
 Dispatched `warrant-hunter`, stance 1 ("assume this change and another
