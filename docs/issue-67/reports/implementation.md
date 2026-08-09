@@ -1,9 +1,12 @@
 ---
-code_under_review: pending
+code_under_review:
+  - tests/fetch-core.sh
+  - tests/run-gate-tests.sh
+  - docs/handbooks/execution-observation-plugins.md
 type: refactor
 breaking: false
 verdict: pending
-loop_state: committing
+loop_state: landed
 ---
 
 # Implementation record — issue #67: adopt test-env resolution convention
@@ -81,16 +84,13 @@ None open. The after-proposal warrant hunt (recorded under
 `docs/issue-67/reports/`) surfaced no unresolved finding blocking this
 build.
 
-## Next steps
-Commit this record together with the code changes, push the branch, and
-open/update the PR against `main` with a body containing `Closes #67`.
-Once merged, a follow-up pass (out of session) should update this
-record's `loop_state` to `landed` and `code_under_review` to the merge
-commit sha.
-
-## Resolution path
-No open findings to resolve; this section is present to satisfy the
-non-terminal loop_state requirement.
+## Warrant hunt (before-landing)
+Dispatched `warrant-hunter`, stance 1 ("assume this change and another
+plugin's rule cancel each other out — find the pair"): NO FINDING. No
+other script, CI workflow, or wrapper in this repo consumes
+`fetch-core.sh`'s/`run-gate-tests.sh`'s exit codes besides
+`run-gate-tests.sh` itself, which already handles exit 75 correctly. See
+`docs/reports/2026-08-09-hunt-test-env-resolution-adoption.md`.
 
 ## type / breaking / verdict
 - type: refactor (test-runner behavior change, no product code touched)
