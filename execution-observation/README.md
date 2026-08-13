@@ -42,3 +42,15 @@ results, never a standalone summary. Phase-1 output (current-state
 survey, proposal) lives under
 `docs/issue-<n>/reports/execution-observation/` and
 `docs/issue-<n>/proposals/`.
+
+Two admissibility rules narrow what a citation is allowed to support:
+a `file:line` is evidence only when the line sits inside a hunk the
+observed PR's diff actually changed (a line merely in a changed file,
+outside any changed hunk, is context and must be logged as such, never
+cited as a finding's basis); and the per-claim `mode` field records how
+the citation was obtained — `read`, `command`, or `asserted` — where an
+`asserted` citation (the observed role's own record, unverified here)
+can only support `cantTell`/`untested`, never `passed`/`failed`. The
+trajectory verdict is likewise three named pass/fail/not-applicable
+checks (scouted-when-required, surveyed-before-proposing,
+approved-by-human), never one holistic call.
