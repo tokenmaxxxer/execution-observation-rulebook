@@ -50,7 +50,12 @@ outside any changed hunk, is context and must be logged as such, never
 cited as a finding's basis); and the per-claim `mode` field records how
 the citation was obtained — `read`, `command`, or `asserted` — where an
 `asserted` citation (the observed role's own record, unverified here)
-can only support `cantTell`/`untested`, never `passed`/`failed`. The
-trajectory verdict is likewise three named pass/fail/not-applicable
-checks (scouted-when-required, surveyed-before-proposing,
-approved-by-human), never one holistic call.
+can only support `cantTell`/`untested`, never `passed`/`failed` — and
+its verdict sentence must say so inline ("unverified, per the observed
+role's own record"), not rely on a reader cross-referencing the `mode`
+field. The trajectory verdict is likewise three named pass/fail/not-
+applicable checks (scouted-when-required, surveyed-before-proposing,
+approved-by-human), never one holistic call. The current-state survey
+itself reads the observed PR's diff and commits before the observed
+role's own record narrative, so its scope statement is built from the
+artifact rather than anchored on that role's self-framing.
